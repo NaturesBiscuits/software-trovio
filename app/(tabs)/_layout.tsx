@@ -13,6 +13,7 @@ export default function TabsLayout() {
                 <Stack.Screen name="notification" />
                 <Stack.Screen name="home" />
                 <Stack.Screen name="settings" />
+                <Stack.Screen name="discover" />
             </Stack>
             {!hideBottomNav && <BottomNav />}
         </React.Fragment>

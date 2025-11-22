@@ -6,10 +6,11 @@ export default function SearchScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "white" }}>
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <Text>Notifcation</Text>
+        <Text>Notification</Text>
       </View>
         <BottomNav visible />
     </View>
+  
   );
 }
 

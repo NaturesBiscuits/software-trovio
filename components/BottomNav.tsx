@@ -22,9 +22,9 @@ export default function BottomNav({ visible = false }: BottomNavProps) {
   ] as const;
 
   const pathByTab = {
-    notification: "/notification",
-    home: "/home",
-    settings: "/settings",
+    notification: "/(tabs)/notification",
+    home: "/(tabs)/discover",
+    settings: "/(tabs)/settings",
   } as const;
 
   return (
@@ -44,7 +44,10 @@ export default function BottomNav({ visible = false }: BottomNavProps) {
       }}
     >
       {tabs.map((tab) => {
-        const isActive = pathname.includes(tab.name);
+        // For home tab, check if we're on discover route
+        const isActive = tab.name === "home" 
+          ? pathname?.includes("/discover")
+          : pathname?.includes(tab.name);
         return (
           <TouchableOpacity
             key={tab.name}

@@ -31,7 +31,21 @@ export default function RootLayout() {
     });
     return () => {
       isMounted = false;
-      subscription.subscription.unsubscribe();
+      // `subscription` is the `data` object returned by Supabase; it contains a
+      // `subscription` property which exposes `unsubscribe()` in some versions.
+      // Defensively call whichever function exists to avoid runtime errors on unmount.
+      try {
+        // If the returned data has the shape { subscription }, call unsubscribe on it.
+        // Otherwise, if the data object itself exposes unsubscribe(), call that.
+        const subAny = subscription as any;
+        if (subAny?.subscription && typeof subAny.subscription.unsubscribe === 'function') {
+          subAny.subscription.unsubscribe();
+        } else if (typeof subAny?.unsubscribe === 'function') {
+          subAny.unsubscribe();
+        }
+      } catch (e) {
+        // Silently ignore errors during cleanup.
+      }
     };
   }, []);
 

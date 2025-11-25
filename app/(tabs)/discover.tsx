@@ -23,6 +23,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 // --- IMPORTS FROM YOUR PROJECT ---
 import BottomNav from '../../components/BottomNav';
 import DiscoverFlipCard, { StoreApplication } from '../../components/DiscoverFlipCard';
+import StoreProfileModal from '../../components/StoreProfileModal';
 import TopNav from '../../components/TopNav';
 import VerticalStoreCard from '../../components/VerticalStoreCard';
 import { useUserProfile } from '../../context/UserProfileContext';
@@ -165,6 +166,7 @@ export default function HomeScreen() {
   const [flippedCardIndex, setFlippedCardIndex] = useState<number | null>(null);
   const [flipHintDismissed, setFlipHintDismissed] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<StoreApplication | null>(null);
   
   // Animation Refs
   const navTranslateY = useRef(new Animated.Value(0)).current;
@@ -175,28 +177,56 @@ export default function HomeScreen() {
 
   // 1. Fetch Location
   useEffect(() => {
+    let watcher: Location.LocationSubscription | null = null;
+
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
+        if (status !== Location.PermissionStatus.GRANTED) return;
         setHasLocPerm(true);
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
         if (location?.coords) {
-          setUserCoords({ latitude: location.coords.latitude, longitude: location.coords.longitude });
+          setUserCoords({
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          });
         }
+
+        watcher = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 4000,
+            distanceInterval: 5,
+          },
+          (pos) => {
+            if (pos?.coords) {
+              setUserCoords({
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
+              });
+            }
+          },
+        );
       } catch (e) {
         console.log('Location Error', e);
       }
     })();
+
+    return () => {
+      watcher?.remove();
+    };
   }, []);
 
   // 2. Fetch Stores
   useEffect(() => {
-    const fetchStores = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('store_applications')
-        .select('*')
+  const fetchStores = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('store_applications')
+      .select('*')
         .eq('status', 'accepted')
         .order('created_at', { ascending: false }); // Let Supabase do the sorting
 
@@ -249,6 +279,10 @@ export default function HomeScreen() {
     setFlippedCardIndex((prev) => (prev === idx ? null : idx));
   }, []);
 
+  const handleViewStore = useCallback((store: StoreApplication) => {
+    setSelectedStore(store);
+  }, []);
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -283,10 +317,10 @@ export default function HomeScreen() {
             {/* Horizontal Scroll (Discover) */}
             <Text style={styles.sectionHeader}>Discover</Text>
             {stores.length > 0 ? (
-              <FlatList
-                horizontal
-                data={stores}
-                showsHorizontalScrollIndicator={false}
+                <FlatList
+                  horizontal
+                  data={stores}
+                  showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item, index }) => (
@@ -298,6 +332,7 @@ export default function HomeScreen() {
                     onFirstFlip={() => setFlipHintDismissed(true)}
                     isFlipped={flippedCardIndex === index}
                     flipCard={() => onCardFlip(index)}
+                    onViewProfile={handleViewStore}
                   />
                 )}
                 bounces={false}
@@ -313,6 +348,7 @@ export default function HomeScreen() {
               <VerticalStoreCard
                 key={item.id}
                 store={item}
+                onPress={() => handleViewStore(item)}
               />
             ))}
           </>
@@ -321,6 +357,13 @@ export default function HomeScreen() {
 
       {/* Overlays */}
       <ProfileSidePanel visible={profilePanelOpen} onClose={() => setProfilePanelOpen(false)} user={userProfile} />
+
+      <StoreProfileModal
+        visible={Boolean(selectedStore)}
+        store={selectedStore}
+        onClose={() => setSelectedStore(null)}
+        userCoords={userCoords}
+      />
       
       {/* TopNav - Shows when scrolled down 20% */}
       <Animated.View 
@@ -336,7 +379,7 @@ export default function HomeScreen() {
       </Animated.View>
       
       <Animated.View style={[styles.bottomNavContainer, { transform: [{ translateY: navTranslateY }] }]}>
-        <BottomNav visible />
+      <BottomNav visible />
       </Animated.View>
     </View>
   );

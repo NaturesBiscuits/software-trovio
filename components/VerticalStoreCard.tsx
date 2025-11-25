@@ -48,7 +48,6 @@ export default function VerticalStoreCard({ store, onPress }: VerticalStoreCardP
 
   return (
     <TouchableOpacity
-      key={store.id}
       style={styles.verticalCard}
       activeOpacity={0.9}
       onPress={onPress}

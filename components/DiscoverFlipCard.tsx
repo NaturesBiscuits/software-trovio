@@ -35,6 +35,7 @@ interface DiscoverFlipCardProps {
   isFlipped: boolean;
   flipCard: () => void;
   hasLocationPermission: boolean;
+  onViewProfile?: (store: StoreApplication) => void;
 }
 
 // Calculate distance outside component to keep it pure
@@ -61,6 +62,7 @@ export default React.memo(function DiscoverFlipCard({
   isFlipped,
   flipCard,
   hasLocationPermission,
+  onViewProfile,
 }: DiscoverFlipCardProps) {
   const flipAnim = useRef(new Animated.Value(0)).current;
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -146,7 +148,12 @@ export default React.memo(function DiscoverFlipCard({
   };
 
   return (
-    <TouchableOpacity activeOpacity={1} style={styles.discoverCardWrapper} onPress={flipCard}>
+    <TouchableOpacity
+      activeOpacity={1}
+      style={styles.discoverCardWrapper}
+      onLongPress={flipCard}
+      delayLongPress={250}
+    >
       {/* FRONT FACE */}
       <Animated.View style={[styles.flipCardFace, frontAnimatedStyle]}>
         <View style={styles.discoverCardContent}>
@@ -171,7 +178,7 @@ export default React.memo(function DiscoverFlipCard({
           {showFlipHint && (
             <View style={styles.flipHint}>
               <Icon name="sync" size={16} color="#FFF" style={{ marginRight: 4 }} />
-              <Text style={styles.flipHintText}>Tap to flip</Text>
+              <Text style={styles.flipHintText}>Hold to flip</Text>
             </View>
           )}
         </View>
@@ -199,6 +206,13 @@ export default React.memo(function DiscoverFlipCard({
           >
             <Icon name="navigate-circle-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
             <Text style={styles.navButtonText}>Navigate</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.profileButton}
+            onPress={() => onViewProfile?.(item)}
+          >
+            <Icon name="storefront-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
+            <Text style={styles.navButtonText}>View Store</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -325,6 +339,15 @@ const styles = StyleSheet.create({
   },
   navButton: {
     backgroundColor: '#468dff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    borderRadius: 25,
+    marginBottom: 10,
+  },
+  profileButton: {
+    backgroundColor: '#2b825b',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

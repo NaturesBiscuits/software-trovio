@@ -29,7 +29,13 @@ import VerticalStoreCard from '../../components/VerticalStoreCard';
 import { useUserProfile } from '../../context/UserProfileContext';
 import { supabase } from '../../lib/supabase';
 
-// --- UTILITIES ---
+// --- HINT BADGE COMPONENT FOR DISCOVER CARDS ---
+const HoldIndicator = ({ style = {}, text = "Hold card to view details" }: { style?: any; text?: string }) => (
+  <View style={[styles.holdIndicatorContainer, style]}>
+    <Icon name="hand-left-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+    <Text style={styles.holdIndicatorText}>{text}</Text>
+  </View>
+);
 
 // --- SUB-COMPONENT: PROFILE SIDE PANEL ---
 const ProfileSidePanel = ({
@@ -277,11 +283,31 @@ export default function HomeScreen() {
 
   const onCardFlip = useCallback((idx: number) => {
     setFlippedCardIndex((prev) => (prev === idx ? null : idx));
+    setFlipHintDismissed(true); // Hide hint after any card flip
   }, []);
 
   const handleViewStore = useCallback((store: StoreApplication) => {
     setSelectedStore(store);
   }, []);
+  
+  // Only show the hold hint indicator on the first discover card, if not dismissed
+  const renderDiscoverCard = ({ item, index }: { item: StoreApplication; index: number }) => (
+    <View>
+      <DiscoverFlipCard
+        item={item}
+        userCoords={userCoords}
+        hasLocationPermission={hasLocPerm}
+        showFlipHint={!flipHintDismissed && index === 0}
+        onFirstFlip={() => setFlipHintDismissed(true)}
+        isFlipped={flippedCardIndex === index}
+        flipCard={() => onCardFlip(index)}
+        onViewProfile={handleViewStore}
+      />
+      {!flipHintDismissed && index === 0 && (
+        <HoldIndicator style={styles.holdIndicatorPosition} />
+      )}
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -321,23 +347,12 @@ export default function HomeScreen() {
                   horizontal
                   data={stores}
                   showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item, index }) => (
-                  <DiscoverFlipCard
-                    item={item}
-                    userCoords={userCoords}
-                    hasLocationPermission={hasLocPerm}
-                    showFlipHint={!flipHintDismissed && index === 0}
-                    onFirstFlip={() => setFlipHintDismissed(true)}
-                    isFlipped={flippedCardIndex === index}
-                    flipCard={() => onCardFlip(index)}
-                    onViewProfile={handleViewStore}
-                  />
-                )}
-                bounces={false}
-                overScrollMode="never"
-              />
+                  contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderDiscoverCard}
+                  bounces={false}
+                  overScrollMode="never"
+                />
             ) : (
               <View style={styles.emptyBox}><Text style={styles.emptyText}>No stores found.</Text></View>
             )}
@@ -425,6 +440,31 @@ const styles = StyleSheet.create({
   emptyBox: { alignItems: 'center', padding: 20 },
   emptyText: { color: '#888' },
 
+  // --- Hold Indicator
+  holdIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#222',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    alignSelf: 'flex-start',
+    opacity: 0.94,
+    marginTop: 5,
+    elevation: 3,
+  },
+  holdIndicatorText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+  },
+  holdIndicatorPosition: {
+    position: 'absolute',
+    left: 18,
+    bottom: 15,
+    zIndex: 15,
+  },
 
   // Side Panel
   panelOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },

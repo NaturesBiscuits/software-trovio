@@ -15,7 +15,10 @@ export async function getStorageImageUrl(
 ): Promise<string | null> {
   if (!filename || !userId) return null;
 
-  const storagePath = `applications/${userId}/store_photos/${filename}`;
+  // Avoid duplicating the folder path if the filename already includes it
+  const storagePath = filename.includes('applications/')
+    ? filename
+    : `applications/${userId}/store_photos/${filename}`;
 
   try {
     // Try to get a signed URL (valid for 1 hour)

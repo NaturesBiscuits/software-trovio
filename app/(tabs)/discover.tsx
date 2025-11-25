@@ -30,12 +30,6 @@ import { supabase } from '../../lib/supabase';
 
 // --- UTILITIES ---
 
-const getStorageUrl = (filename: string | null, userId: string | null): string | null => {
-  if (!filename || !userId) return null;
-  const { data } = supabase.storage.from('tus').getPublicUrl(`applications/${userId}/store_photos/${filename}`);
-  return data.publicUrl;
-};
-
 // --- SUB-COMPONENT: PROFILE SIDE PANEL ---
 const ProfileSidePanel = ({
   visible,
@@ -298,7 +292,6 @@ export default function HomeScreen() {
                 renderItem={({ item, index }) => (
                   <DiscoverFlipCard
                     item={item}
-                    photoUrl={getStorageUrl(item.photos_url?.[0] || null, item.user_id)}
                     userCoords={userCoords}
                     hasLocationPermission={hasLocPerm}
                     showFlipHint={!flipHintDismissed && index === 0}
@@ -316,16 +309,12 @@ export default function HomeScreen() {
 
             {/* Vertical List (For You) */}
             <Text style={styles.sectionHeader}>For you</Text>
-            {stores.map((item) => {
-              const url = getStorageUrl(item.photos_url?.[0] || null, item.user_id);
-              return (
-                <VerticalStoreCard
-                  key={item.id}
-                  store={item}
-                  photoUrl={url}
-                />
-              );
-            })}
+            {stores.map((item) => (
+              <VerticalStoreCard
+                key={item.id}
+                store={item}
+              />
+            ))}
           </>
         )}
       </ScrollView>

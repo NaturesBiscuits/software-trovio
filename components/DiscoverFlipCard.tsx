@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Animated,
     Easing,
@@ -11,6 +11,7 @@ import {
     View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { getStorageImageUrl } from '../lib/storageUtils';
 
 export interface StoreApplication {
   id: string;
@@ -28,7 +29,6 @@ export interface StoreApplication {
 
 interface DiscoverFlipCardProps {
   item: StoreApplication;
-  photoUrl: string | null;
   userCoords: { latitude: number; longitude: number } | null;
   showFlipHint: boolean;
   onFirstFlip: () => void;
@@ -55,7 +55,6 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
 
 export default React.memo(function DiscoverFlipCard({
   item,
-  photoUrl,
   userCoords,
   showFlipHint,
   onFirstFlip,
@@ -64,6 +63,28 @@ export default React.memo(function DiscoverFlipCard({
   hasLocationPermission,
 }: DiscoverFlipCardProps) {
   const flipAnim = useRef(new Animated.Value(0)).current;
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  // Load image asynchronously
+  useEffect(() => {
+    const loadImage = async () => {
+      const photoFilename = item.photos_url && item.photos_url.length > 0 
+        ? item.photos_url[0] 
+        : null;
+      
+      if (photoFilename && item.user_id) {
+        setImageLoading(true);
+        const url = await getStorageImageUrl(photoFilename, item.user_id);
+        setPhotoUrl(url);
+        setImageLoading(false);
+      } else {
+        setImageLoading(false);
+      }
+    };
+
+    loadImage();
+  }, [item.photos_url, item.user_id]);
 
   const { distanceStr, pathLink, locationStatus } = useMemo(() => {
     let status: 'has' | 'no-permission' | 'no-store-location' = 'has';
@@ -129,8 +150,12 @@ export default React.memo(function DiscoverFlipCard({
       {/* FRONT FACE */}
       <Animated.View style={[styles.flipCardFace, frontAnimatedStyle]}>
         <View style={styles.discoverCardContent}>
-          {photoUrl ? (
-            <Image source={{ uri: photoUrl }} style={styles.discoverImage} />
+          {photoUrl && !imageLoading ? (
+            <Image 
+              source={{ uri: photoUrl }} 
+              style={styles.discoverImage}
+              resizeMode="cover"
+            />
           ) : (
             <View style={styles.placeholderBox}>
               <Text style={styles.placeholderIcon}>📷</Text>

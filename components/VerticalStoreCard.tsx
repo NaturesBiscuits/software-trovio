@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { getStorageImageUrl } from '../lib/storageUtils';
 
 export interface StoreApplication {
   id: string;
@@ -18,11 +19,33 @@ export interface StoreApplication {
 
 interface VerticalStoreCardProps {
   store: StoreApplication;
-  photoUrl: string | null;
   onPress?: () => void;
 }
 
-export default function VerticalStoreCard({ store, photoUrl, onPress }: VerticalStoreCardProps) {
+export default function VerticalStoreCard({ store, onPress }: VerticalStoreCardProps) {
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  // Load image asynchronously
+  useEffect(() => {
+    const loadImage = async () => {
+      const photoFilename = store.photos_url && store.photos_url.length > 0 
+        ? store.photos_url[0] 
+        : null;
+      
+      if (photoFilename && store.user_id) {
+        setImageLoading(true);
+        const url = await getStorageImageUrl(photoFilename, store.user_id);
+        setPhotoUrl(url);
+        setImageLoading(false);
+      } else {
+        setImageLoading(false);
+      }
+    };
+
+    loadImage();
+  }, [store.photos_url, store.user_id]);
+
   return (
     <TouchableOpacity
       key={store.id}
@@ -30,13 +53,19 @@ export default function VerticalStoreCard({ store, photoUrl, onPress }: Vertical
       activeOpacity={0.9}
       onPress={onPress}
     >
-      {photoUrl ? (
-        <Image source={{ uri: photoUrl }} style={styles.verticalImg} resizeMode="cover" />
-      ) : (
-        <View style={styles.verticalPlaceholder}>
-          <Text style={styles.placeholderIcon}>📷</Text>
-        </View>
-      )}
+      <View style={styles.imageContainer}>
+        {photoUrl && !imageLoading ? (
+          <Image 
+            source={{ uri: photoUrl }} 
+            style={styles.verticalImg} 
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.verticalPlaceholder}>
+            <Text style={styles.placeholderIcon}>📷</Text>
+          </View>
+        )}
+      </View>
       <View style={styles.verticalContent}>
         <Text style={styles.verticalTitle}>{store.store_name || 'Unnamed Store'}</Text>
         <View style={styles.verticalRow}>
@@ -62,9 +91,14 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     overflow: 'hidden',
   },
-  verticalImg: {
+  imageContainer: {
     width: '100%',
     height: 200,
+    overflow: 'hidden',
+  },
+  verticalImg: {
+    width: '100%',
+    height: '100%',
     resizeMode: 'cover',
   },
   verticalPlaceholder: {

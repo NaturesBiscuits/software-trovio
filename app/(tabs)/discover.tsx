@@ -1,32 +1,32 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  Image,
-  StyleSheet,
-  ScrollView,
-  FlatList,
-  TouchableOpacity,
   ActivityIndicator,
+  Alert,
   Animated,
+  Dimensions,
   Easing,
+  FlatList,
+  Image,
+  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Platform,
-  Linking,
-  Dimensions,
   ScrollView as RNScrollView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
   TouchableWithoutFeedback,
-  Alert,
+  View
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/Ionicons';
-import * as Location from 'expo-location';
 
 // --- IMPORTS FROM YOUR PROJECT ---
 import BottomNav from '../../components/BottomNav';
-import { supabase } from '../../lib/supabase';
+import TopNav from '../../components/TopNav';
 import { useUserProfile } from '../../context/UserProfileContext';
+import { supabase } from '../../lib/supabase';
 
 // --- TYPES ---
 interface StoreApplication {
@@ -325,6 +325,8 @@ export default function HomeScreen() {
   
   // Animation Refs
   const navTranslateY = useRef(new Animated.Value(0)).current;
+  const topNavOpacity = useRef(new Animated.Value(0)).current;
+  const topNavTranslateY = useRef(new Animated.Value(-100)).current;
   const lastScrollY = useRef(0);
   const isNavHidden = useRef(false);
 
@@ -363,17 +365,36 @@ export default function HomeScreen() {
     fetchStores();
   }, []);
 
-  // 3. Scroll Handler for Navbar
+  // 3. Scroll Handler for Navbar and TopNav
   const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const currentY = e.nativeEvent.contentOffset.y;
     const diff = currentY - lastScrollY.current;
+    const contentHeight = e.nativeEvent.contentSize.height;
+    const scrollViewHeight = e.nativeEvent.layoutMeasurement.height;
+    const maxScroll = contentHeight - scrollViewHeight;
+    
+    // Calculate scroll percentage (0-100%)
+    const scrollPercentage = maxScroll > 0 ? (currentY / maxScroll) * 100 : 0;
 
-    // Scroll Down -> Hide
+    // Show TopNav when scrolled down 20% or more
+    if (scrollPercentage >= 20 && currentY > 0) {
+      Animated.parallel([
+        Animated.timing(topNavOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.timing(topNavTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(topNavOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(topNavTranslateY, { toValue: -100, duration: 200, useNativeDriver: true }),
+      ]).start();
+    }
+
+    // Scroll Down -> Hide Bottom Nav
     if (currentY > 50 && diff > 10 && !isNavHidden.current) {
       isNavHidden.current = true;
       Animated.timing(navTranslateY, { toValue: 100, duration: 250, useNativeDriver: true }).start();
     } 
-    // Scroll Up -> Show
+    // Scroll Up -> Show Bottom Nav
     else if ((diff < -10 || currentY <= 0) && isNavHidden.current) {
       isNavHidden.current = false;
       Animated.timing(navTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }).start();
@@ -471,6 +492,19 @@ export default function HomeScreen() {
 
       {/* Overlays */}
       <ProfileSidePanel visible={profilePanelOpen} onClose={() => setProfilePanelOpen(false)} user={userProfile} />
+      
+      {/* TopNav - Shows when scrolled down 20% */}
+      <Animated.View 
+        style={[
+          styles.topNavContainer, 
+          { 
+            opacity: topNavOpacity,
+            transform: [{ translateY: topNavTranslateY }] 
+          }
+        ]}
+      >
+        <TopNav />
+      </Animated.View>
       
       <Animated.View style={[styles.bottomNavContainer, { transform: [{ translateY: navTranslateY }] }]}>
         <BottomNav visible />
@@ -632,6 +666,22 @@ const styles = StyleSheet.create({
   panelButtonIcon: { marginRight: 18 },
   panelButtonText: { color: '#fff', fontSize: 20, fontWeight: '600' },
 
+  // Top Nav
+  topNavContainer: { 
+    position: 'absolute', 
+    left: 0, 
+    right: 0, 
+    top: 0, 
+    zIndex: 100,
+    backgroundColor: '#fff',
+    paddingBottom: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  
   // Bottom Nav
   bottomNavContainer: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 100 },
 });

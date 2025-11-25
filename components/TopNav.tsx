@@ -1,13 +1,51 @@
+import { usePathname, useRouter } from "expo-router";
 import React from "react";
-import { View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
 
 export default function TopNav() {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const tabs = [
+    { name: "search", icon: "search-outline", label: "Search" },
+    { name: "home", icon: "home-outline", label: "For You" },
+    { name: "profile", icon: "person-outline", label: "Profile" },
+  ] as const;
+
+  const pathByTab = {
+    search: "/(tabs)/topNavTabs/search",
+    home: "/(tabs)/topNavTabs/forYou",
+    profile: "/(tabs)/topNavTabs/profile",
+  } as const;
+
   return (
     <View
       style={{
-        height: 80,      // adjust as needed
-        marginTop: 40,   // control the gap from top
+        flexDirection: "row",
+        justifyContent: "space-around",
+        alignItems: "center",
+        marginTop: 70
       }}
-    />
+    >
+      {tabs.map((tab) => {
+        const isActive = pathname.includes(tab.name);
+        return (
+          <TouchableOpacity
+            key={tab.name}
+            onPress={() => router.push(pathByTab[tab.name])}
+            style={{ alignItems: "center" }}
+          >
+            <Text
+              style={{
+                fontSize: 15,
+                fontWeight: "bold"
+              }}
+            >
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }

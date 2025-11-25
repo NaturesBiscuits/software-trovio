@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { getStorageImageUrl } from '../lib/storageUtils';
+import { getStorageImageUrls } from '../lib/storageUtils';
 
 export interface StoreApplication {
   id: string;
@@ -24,28 +24,54 @@ interface VerticalStoreCardProps {
 }
 
 export default function VerticalStoreCard({ store, onPress }: VerticalStoreCardProps) {
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [imageLoading, setImageLoading] = useState(true);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   // Load image asynchronously
   useEffect(() => {
-    const loadImage = async () => {
-      const photoFilename = store.photos_url && store.photos_url.length > 0 
-        ? store.photos_url[0] 
-        : null;
-      
-      if (photoFilename && store.user_id) {
+    let isActive = true;
+    const loadImages = async () => {
+      if (store.photos_url?.length && store.user_id) {
         setImageLoading(true);
-        const url = await getStorageImageUrl(photoFilename, store.user_id);
-        setPhotoUrl(url);
-        setImageLoading(false);
+        const urls = await getStorageImageUrls(store.photos_url, store.user_id);
+        if (!isActive) return;
+        const filtered = urls.filter((url): url is string => Boolean(url));
+        setImageUrls(filtered);
+        setCurrentPhotoIndex(0);
       } else {
-        setImageLoading(false);
+        setImageUrls([]);
       }
+      if (isActive) setImageLoading(false);
     };
 
-    loadImage();
+    loadImages();
+    return () => {
+      isActive = false;
+    };
   }, [store.photos_url, store.user_id]);
+
+  useEffect(() => {
+    if (imageUrls.length <= 1) return;
+
+    const interval = setInterval(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => {
+        setCurrentPhotoIndex((prev) => (prev + 1) % imageUrls.length);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [imageUrls.length, fadeAnim]);
 
   return (
     <TouchableOpacity
@@ -54,10 +80,10 @@ export default function VerticalStoreCard({ store, onPress }: VerticalStoreCardP
       onPress={onPress}
     >
       <View style={styles.imageContainer}>
-        {photoUrl && !imageLoading ? (
-          <Image 
-            source={{ uri: photoUrl }} 
-            style={styles.verticalImg} 
+        {imageUrls.length > 0 && !imageLoading ? (
+          <Animated.Image 
+            source={{ uri: imageUrls[currentPhotoIndex] }} 
+            style={[styles.verticalImg, { opacity: fadeAnim }]} 
             resizeMode="cover"
           />
         ) : (

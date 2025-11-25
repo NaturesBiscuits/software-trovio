@@ -1,17 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Animated,
-    Easing,
-    Image,
-    Linking,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Easing,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { getStorageImageUrl } from '../lib/storageUtils';
+import { getStorageImageUrls } from '../lib/storageUtils';
 
 export interface StoreApplication {
   id: string;
@@ -66,28 +65,54 @@ export default React.memo(function DiscoverFlipCard({
   onViewProfile,
 }: DiscoverFlipCardProps) {
   const flipAnim = useRef(new Animated.Value(0)).current;
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [imageLoading, setImageLoading] = useState(true);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   // Load image asynchronously
   useEffect(() => {
-    const loadImage = async () => {
-      const photoFilename = item.photos_url && item.photos_url.length > 0 
-        ? item.photos_url[0] 
-        : null;
-      
-      if (photoFilename && item.user_id) {
+    let isActive = true;
+    const loadImages = async () => {
+      if (item.photos_url?.length && item.user_id) {
         setImageLoading(true);
-        const url = await getStorageImageUrl(photoFilename, item.user_id);
-        setPhotoUrl(url);
-        setImageLoading(false);
+        const urls = await getStorageImageUrls(item.photos_url, item.user_id);
+        if (!isActive) return;
+        const filtered = urls.filter((url): url is string => Boolean(url));
+        setImageUrls(filtered);
+        setCurrentPhotoIndex(0);
       } else {
-        setImageLoading(false);
+        setImageUrls([]);
       }
+      if (isActive) setImageLoading(false);
     };
 
-    loadImage();
+    loadImages();
+    return () => {
+      isActive = false;
+    };
   }, [item.photos_url, item.user_id]);
+
+  useEffect(() => {
+    if (imageUrls.length <= 1) return;
+
+    const interval = setInterval(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => {
+        setCurrentPhotoIndex((prev) => (prev + 1) % imageUrls.length);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [imageUrls.length, fadeAnim]);
 
   const { distanceStr, pathLink, locationStatus } = useMemo(() => {
     let status: 'has' | 'no-permission' | 'no-store-location' = 'has';
@@ -158,10 +183,10 @@ export default React.memo(function DiscoverFlipCard({
       {/* FRONT FACE */}
       <Animated.View style={[styles.flipCardFace, frontAnimatedStyle]}>
         <View style={styles.discoverCardContent}>
-          {photoUrl && !imageLoading ? (
-            <Image 
-              source={{ uri: photoUrl }} 
-              style={styles.discoverImage}
+          {imageUrls.length > 0 && !imageLoading ? (
+            <Animated.Image 
+              source={{ uri: imageUrls[currentPhotoIndex] }} 
+              style={[styles.discoverImage, { opacity: fadeAnim }]}
               resizeMode="cover"
             />
           ) : (

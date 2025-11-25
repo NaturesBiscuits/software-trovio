@@ -1,7 +1,7 @@
 import { usePathname, useRouter } from "expo-router";
 import React from "react";
-import { useTranslation } from "react-i18next";
-import { Text, TouchableOpacity, View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
+import Icon from "react-native-vector-icons/Ionicons";
 
 type BottomNavProps = {
   /** Controls visibility. Defaults to false so the nav is hidden unless explicitly enabled. */
@@ -13,12 +13,23 @@ export default function BottomNav({ visible = false }: BottomNavProps) {
   if (!visible) return null;
   const router = useRouter();
   const pathname = usePathname();
-  const { t } = useTranslation();
 
   const tabs = [
-    { name: "notification", labelKey: "Notifications" },
-    { name: "home", labelKey: "Home" },
-    { name: "settings", labelKey: "Settings" },
+    { 
+      name: "notification", 
+      iconOutline: "notifications-outline", 
+      iconFilled: "notifications" 
+    },
+    { 
+      name: "home", 
+      iconOutline: "home-outline", 
+      iconFilled: "home" 
+    },
+    { 
+      name: "settings", 
+      iconOutline: "settings-outline", 
+      iconFilled: "settings" 
+    },
   ] as const;
 
   const pathByTab = {
@@ -33,12 +44,12 @@ export default function BottomNav({ visible = false }: BottomNavProps) {
         flexDirection: "row",
         justifyContent: "space-around",
         alignItems: "center",
-        backgroundColor: "#1C1C1E",
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        paddingVertical: 10,
+        backgroundColor: "#191820",
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+        paddingVertical: 15,
         position: "absolute",
-        bottom: 50,
+        bottom: 0,
         left: 0,
         right: 0,
       }}
@@ -54,14 +65,11 @@ export default function BottomNav({ visible = false }: BottomNavProps) {
             onPress={() => router.push(pathByTab[tab.name])}
             style={{ alignItems: "center" }}
           >
-            <Text
-              style={{
-                color: isActive ? "#FFFFFF" : "#8E8E93",
-                fontSize: 15,
-              }}
-            >
-              {t(tab.labelKey)}
-            </Text>
+            <Icon
+              name={isActive ? tab.iconFilled : tab.iconOutline}
+              size={30}
+              color={isActive ? "#FFFFFF" : "#FFFFFF"}
+            />
           </TouchableOpacity>
         );
       })}

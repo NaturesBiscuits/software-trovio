@@ -1,7 +1,7 @@
 import UserTagPreferences from "@/components/UserTagPreferences";
 import { useUserProfile } from "@/context/UserProfileContext";
 import { supabase } from "@/lib/supabase";
-import { router } from "expo-router";
+import { router, useNavigation } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -31,7 +31,7 @@ export default function ProfileScreen() {
     }
   }, [userProfile?.username]);
 
-  // 🟡 Save username change
+  // Save username change
   const handleSaveUsername = async () => {
     if (!username.trim()) {
       Alert.alert(t("Invalid username"), t("Username cannot be empty."));
@@ -100,7 +100,7 @@ export default function ProfileScreen() {
       {/* Back Button and Refresh */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 40, marginBottom: 20 }}>
         <TouchableOpacity
-          onPress={() => router.push("/(tabs)/home")}
+          onPress={() => router.back()}
         >
           <Icon name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>

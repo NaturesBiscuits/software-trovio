@@ -76,18 +76,8 @@ const ProfileSidePanel = ({
   const handleSavedStores = () => {
     onClose();
   };
-  const handleMyStore = () => {
-    onClose();
-    // Navigate to the "My Store" screen (update the route as appropriate for your app)
-    router.push('/(tabs)/topNavTabs/myStore');
-  };
   const handleSettings = () => {
     onClose();
-  };
-  const handleProfessionalTools = () => {
-    onClose();
-    // Navigate to a hypothetical "Professional Tools" screen
-    router.push('/(tabs)/topNavTabs/professionalTools');
   };
 
   const handleLogout = async () => {
@@ -149,17 +139,9 @@ const ProfileSidePanel = ({
             <Icon name="person-circle-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
             <Text style={styles.panelButtonText}>Profile</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleMyStore} style={styles.panelButton}>
-            <Icon name="storefront-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
-            <Text style={styles.panelButtonText}>My Store</Text>
-          </TouchableOpacity>
           <TouchableOpacity onPress={handleSavedStores} style={styles.panelButton}>
             <Icon name="bookmark-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
             <Text style={styles.panelButtonText}>Saved Stores</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleProfessionalTools} style={styles.panelButton}>
-            <Icon name="construct-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
-            <Text style={styles.panelButtonText}>Professional Tools</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleSettings} style={styles.panelButton}>
             <Icon name="settings-outline" size={28} color="#fff" style={styles.panelButtonIcon} />

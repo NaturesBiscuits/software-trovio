@@ -12,7 +12,8 @@ const privacySubOptions = [
   {
     title: "Account Deletion",
     icon: "trash-outline",
-    onPress: (router: any) => { /* Route to account deletion */ },
+    // This navigates using Expo Router to the Account Deletion screen
+    onPress: (router: any) => { router.push("/accountdeletion"); },
   },
 ];
 

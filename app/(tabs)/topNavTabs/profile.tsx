@@ -1,106 +1,30 @@
 import UserTagPreferences from "@/components/UserTagPreferences";
 import { useUserProfile } from "@/context/UserProfileContext";
 import { supabase } from "@/lib/supabase";
-import { router, useNavigation } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { router } from "expo-router";
+import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Alert,
   Image,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 
 export default function ProfileScreen() {
-  const { userProfile, isLoading, refreshProfile, updateProfile } = useUserProfile();
+  const { userProfile, isLoading, refreshProfile } = useUserProfile();
   const { t } = useTranslation();
-  const [username, setUsername] = useState("");
-  const [isEditingUsername, setIsEditingUsername] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
-
-  // Initialize username from cached profile data
-  useEffect(() => {
-    if (userProfile?.username) {
-      setUsername(userProfile.username);
-    }
-  }, [userProfile?.username]);
-
-  // Save username change
-  const handleSaveUsername = async () => {
-    if (!username.trim()) {
-      Alert.alert(t("Invalid username"), t("Username cannot be empty."));
-      return;
-    }
-
-    if (!userProfile) {
-      Alert.alert(t("Error"), t("User profile not loaded."));
-      return;
-    }
-
-    setIsSaving(true);
-
-    // Check if username already exists
-    const { data: existingUser, error: checkError } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("username", username.trim().toLowerCase())
-      .maybeSingle();
-
-    if (checkError) {
-      console.error("Error checking username:", checkError);
-      Alert.alert(t("Error"), t("Something went wrong while checking username."));
-      setIsSaving(false);
-      return;
-    }
-
-    if (existingUser && existingUser.id !== userProfile.id) {
-      Alert.alert(t("Username taken"), t("That username is already in use. Please choose another."));
-      setIsSaving(false);
-      return;
-    }
-
-    // Update username
-    const { error: updateError } = await supabase
-      .from("profiles")
-      .update({ username: username.trim().toLowerCase(), updated_at: new Date().toISOString() })
-      .eq("id", userProfile.id);
-
-    if (updateError) {
-      console.error("Error updating username:", updateError);
-      Alert.alert(t("Error"), t("Failed to update username."));
-    } else {
-      // Update cached profile data
-      updateProfile({ username: username.trim().toLowerCase() });
-      Alert.alert(t("Success"), t("Your username has been updated!"));
-      setIsEditingUsername(false);
-    }
-
-    setIsSaving(false);
-  };
-
-  // Handle username editing
-  const handleUsernamePress = () => {
-    setIsEditingUsername(true);
-  };
-
-  const handleUsernameCancel = () => {
-    setIsEditingUsername(false);
-    // Reset to original username if user cancels
-    setUsername(userProfile?.username || "");
-  };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#fff" }} contentContainerStyle={{ padding: 24 }}>
       {/* Back Button and Refresh */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 40, marginBottom: 20 }}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => router.replace('/(tabs)/discover')}
         >
           <Icon name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
@@ -131,36 +55,15 @@ export default function ProfileScreen() {
 
       {/* Info Card */}
       <View style={s.infoCard}>
-        {/* Username */}
+        {/* Username (redirect to change name screen) */}
         <View style={s.infoRow}>
           <Text style={s.label}>{t("Username")}</Text>
-          <View style={s.rowRight}>
-            {isEditingUsername ? (
-              <>
-                <TextInput
-                  value={username}
-                  onChangeText={setUsername}
-                  style={[s.valueInput]}
-                  placeholder={t("Enter username")}
-                  autoCapitalize="none"
-                  autoFocus
-                />
-                <TouchableOpacity onPress={handleSaveUsername} disabled={isSaving}>
-                  <Icon name="checkmark-circle" size={22} color={isSaving ? "#ccc" : "#007AFF"} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleUsernameCancel}>
-                  <Icon name="close-circle" size={22} color="#FF3B30" />
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity onPress={handleUsernamePress}>
-                  <Text style={s.value}>{username || t("Loading username...")}</Text>
-                </TouchableOpacity>
-                <Icon name="chevron-forward" size={18} color="#000" />
-              </>
-            )}
-          </View>
+          <TouchableOpacity style={s.rowRight} onPress={() => router.push("/(tabs)/topNavTabs/changeusername")}>
+            <Text style={s.value}>
+              {userProfile?.username ?? t("Loading username...")}
+            </Text>
+            <Icon name="chevron-forward" size={18} color="#000" />
+          </TouchableOpacity>
         </View>
 
         {/* Name */}
@@ -187,7 +90,6 @@ export default function ProfileScreen() {
         <UserTagPreferences userId={userProfile.id} />
       )}
 
-
       {/* Professional Account Application */}
       <TouchableOpacity
         style={s.professionalButton}
@@ -207,7 +109,6 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={s.adminButton}
           onPress={() => {
-            // Navigate to the review applicants screen
             router.push('/(tabs)/topNavTabs/reviewApplicants');
           }}
         >

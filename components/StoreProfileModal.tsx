@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Image,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { supabase } from '../lib/supabase';
 import { getStorageImageUrls } from '../lib/storageUtils';
+import { supabase } from '../lib/supabase';
 import type { StoreApplication } from './DiscoverFlipCard';
 import StoreRouteMap from './StoreRouteMap';
 
@@ -148,7 +148,6 @@ export default function StoreProfileModal({
             <StoreRouteMap
               origin={userCoords ?? undefined}
               destination={{ latitude: store.latitude, longitude: store.longitude }}
-              apiKey={process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}
             />
           ) : (
             <Text style={styles.emptyText}>Location unavailable.</Text>

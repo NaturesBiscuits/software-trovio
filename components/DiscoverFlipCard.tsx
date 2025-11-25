@@ -25,6 +25,7 @@ export interface StoreApplication {
   description: string | null;
   latitude: number | null;
   longitude: number | null;
+  tags: string[] | null;
 }
 
 interface DiscoverFlipCardProps {

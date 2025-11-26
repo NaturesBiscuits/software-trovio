@@ -8,6 +8,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getStorageImageUrls } from '../lib/storageUtils';
@@ -53,6 +54,9 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
   const d = R * c;
   return d * 1000; // Return meters
 }
+
+// These constants ensure the name/address container is always the same height
+const FIXED_NAME_ADDRESS_CONTAINER_HEIGHT = 60;
 
 export default React.memo(function DiscoverFlipCard({
   item,
@@ -194,11 +198,24 @@ export default React.memo(function DiscoverFlipCard({
               <Text style={styles.placeholderIcon}>📷</Text>
             </View>
           )}
-          <View style={styles.cardOverlayInvisible}>
-            <Text style={styles.cardTitleInvisible}>{item.store_name || 'Unnamed Store'}</Text>
-            <View style={styles.cardRowInvisible}>
+          {/* White fixed-size container for store name and location, no border radius */}
+          <View style={styles.cardOverlayWhiteNoRadiusFixed}>
+            <Text
+              style={styles.cardTitleWhiteFixed}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {item.store_name || 'Unnamed Store'}
+            </Text>
+            <View style={styles.cardRowWhiteFixed}>
               <Icon name="location-outline" size={14} color="#be3e3e" />
-              <Text style={styles.cardSubtitleInvisible}>{item.address || 'No address'}</Text>
+              <Text
+                style={styles.cardSubtitleWhiteFixed}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {item.address || 'No address'}
+              </Text>
             </View>
           </View>
           {showFlipHint && (
@@ -288,40 +305,56 @@ const styles = StyleSheet.create({
   placeholderIcon: {
     fontSize: 40,
   },
-  cardOverlayInvisible: {
+
+  // White fixed-size container for store name/location (no border radius)
+  cardOverlayWhiteNoRadiusFixed: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    padding: 12,
-    backgroundColor: 'transparent',
-    borderColor: 'transparent',
-    borderWidth: 0,
-    elevation: 0,
+    bottom: 0,
+    backgroundColor: '#fff',
+    height: FIXED_NAME_ADDRESS_CONTAINER_HEIGHT,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    // No border radius
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    // Consistent subtle shadow for separation from photo
+    shadowColor: '#000',
+    shadowOpacity: 0.09,
+    shadowRadius: 5,
+    elevation: 1,
   },
-  cardTitleInvisible: {
+  cardTitleWhiteFixed: {
     fontSize: 18,
     fontWeight: '700',
     color: '#111',
-    textShadowColor: undefined,
-    textShadowOffset: undefined,
-    textShadowRadius: 0,
+    marginBottom: 2,
+    width: '100%',
   },
-  cardSubtitleInvisible: {
+  cardSubtitleWhiteFixed: {
     fontSize: 12,
     color: '#be3e3e',
-    marginTop: 2,
-    textShadowColor: undefined,
-    textShadowOffset: undefined,
-    textShadowRadius: 0,
+    marginLeft: 4,
+    width: '88%', // So icon and address can fit on one line, but text truncates as needed
   },
-  cardRowInvisible: {
+  cardRowWhiteFixed: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 2,
     backgroundColor: 'transparent',
-    borderWidth: 0,
+    width: '100%',
   },
+
+  // Hide the old invisible overlay styles (legacy, not used)
+  cardOverlayInvisible: { display: 'none' },
+  cardTitleInvisible: { display: 'none' },
+  cardSubtitleInvisible: { display: 'none' },
+  cardRowInvisible: { display: 'none' },
+
   flipHint: {
     position: 'absolute',
     top: 10,

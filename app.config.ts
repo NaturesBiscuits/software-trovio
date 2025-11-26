@@ -1,5 +1,5 @@
-import type { ExpoConfig } from 'expo/config';
 import { config } from 'dotenv';
+import type { ExpoConfig } from 'expo/config';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
@@ -33,6 +33,20 @@ const expoConfig: ExpoConfig = {
   experiments: {
     tsconfigPaths: true,
   },
+
+  android: {
+    package: "com.trovio.app",
+    intentFilters: [
+      {
+        action: "VIEW",
+        data: [
+          { scheme: "com.trovio.app", host: "auth", pathPrefix: "/" }
+        ],
+        category: ["BROWSABLE", "DEFAULT"]
+      }
+    ]
+  },
+
   extra: {
     SUPABASE_URL: process.env.SUPABASE_URL ?? '',
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY ?? '',

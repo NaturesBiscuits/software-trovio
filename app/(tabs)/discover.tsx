@@ -1,9 +1,6 @@
-import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Dimensions,
   Easing,
@@ -16,300 +13,235 @@ import {
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  View
+  View,
+  Alert
 } from 'react-native';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { supabase } from '../../lib/supabase';
 
-// --- IMPORTS FROM YOUR PROJECT ---
+// --- YOUR COMPONENTS ---
 import BottomNav from '../../components/BottomNav';
 import DiscoverFlipCard, { StoreApplication } from '../../components/DiscoverFlipCard';
 import StoreProfileModal from '../../components/StoreProfileModal';
 import TopNav from '../../components/TopNav';
 import VerticalStoreCard from '../../components/VerticalStoreCard';
 import { useUserProfile } from '../../context/UserProfileContext';
-import { supabase } from '../../lib/supabase';
 
-// --- HINT BADGE COMPONENT FOR DISCOVER CARDS ---
-const HoldIndicator = ({ style = {}, text = "Hold card to view details" }: { style?: any; text?: string }) => (
-  <View style={[styles.holdIndicatorContainer, style]}>
-    <Icon name="hand-left-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
-    <Text style={styles.holdIndicatorText}>{text}</Text>
-  </View>
-);
+// ---------------------------------------------------------
+// 1. CUSTOM HOOKS (Logic Extraction)
+// ---------------------------------------------------------
 
-// --- SUB-COMPONENT: PROFILE SIDE PANEL ---
-const ProfileSidePanel = ({
-  visible,
-  onClose,
-  user
-}: {
-  visible: boolean;
-  onClose: () => void;
-  user: any;
-}) => {
-  const router = useRouter();
-  const screenWidth = Dimensions.get('window').width;
-  const panelWidth = Math.min(320, screenWidth * 0.86);
-  const slideAnim = useRef(new Animated.Value(panelWidth)).current;
-  const [shouldRender, setShouldRender] = useState(visible);
-
-  useEffect(() => {
-    if (visible) setShouldRender(true);
-    Animated.timing(slideAnim, {
-      toValue: visible ? 0 : panelWidth,
-      duration: 300,
-      useNativeDriver: true,
-      easing: Easing.out(Easing.cubic),
-    }).start(() => {
-      if (!visible) setShouldRender(false);
-    });
-  }, [visible]);
-
-  if (!shouldRender) return null;
-
-  // Handlers for panel buttons
-  const handleProfile = () => {
-    onClose();
-    // Navigate to the Profile tab
-    router.push('/(tabs)/topNavTabs/profile');
-  };
-  const handleSavedStores = () => {
-    onClose();
-  };
-  const handleMyStore = () => {
-    onClose();
-    // Navigate to the "My Store" screen (update the route as appropriate for your app)
-    router.push('/(tabs)/topNavTabs/myStore');
-  };
-  const handleSettings = () => {
-    onClose();
-  };
-  const handleProfessionalTools = () => {
-    onClose();
-    // Navigate to a hypothetical "Professional Tools" screen
-    router.push('/(tabs)/topNavTabs/professionalTools');
-  };
-
-  const handleLogout = async () => {
-    onClose();
-    // Confirm before signing out (optional UX improvement)
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        Alert.alert('Sign Out Failed', error.message || 'Unknown error');
-      } else {
-        // Optionally, clear navigation stack / redirect to login
-        router.replace('/(auth)/login'); // Adjust the route to your login path if different
-      }
-    } catch (err: any) {
-      Alert.alert('Sign Out Failed', err.message || 'Unknown error');
-    }
-  };
-
-  return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 110 }]}>
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.panelOverlay} />
-      </TouchableWithoutFeedback>
-      <Animated.View
-        style={[
-          styles.sidePanel,
-          { width: panelWidth, transform: [{ translateX: slideAnim }] },
-        ]}
-      >
-        <View style={styles.sidePanelBar}>
-          <Text style={styles.panelTitle}>Profile</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Icon name="close" size={26} color="#fff" />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.sidePanelInfoArea}>
-          <Image
-            source={{
-              uri: user?.avatar_url || 'https://via.placeholder.com/120',
-            }}
-            style={styles.panelAvatar}
-          />
-          <View>
-            <Text style={styles.panelName}>
-              {user?.full_name || user?.username || 'Unknown User'}
-            </Text>
-            {user?.email && (
-              <View style={styles.panelEmailRow}>
-                <Icon name="mail-outline" color="#fff" size={17} style={{ marginRight: 7 }} />
-                <Text style={styles.panelEmail} numberOfLines={1}>
-                  {user.email}
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-        <View style={styles.panelButtonsContainer}>
-          <TouchableOpacity onPress={handleProfile} style={styles.panelButton}>
-            <Icon name="person-circle-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
-            <Text style={styles.panelButtonText}>Profile</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleMyStore} style={styles.panelButton}>
-            <Icon name="storefront-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
-            <Text style={styles.panelButtonText}>My Store</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleSavedStores} style={styles.panelButton}>
-            <Icon name="bookmark-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
-            <Text style={styles.panelButtonText}>Saved Stores</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleProfessionalTools} style={styles.panelButton}>
-            <Icon name="construct-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
-            <Text style={styles.panelButtonText}>Professional Tools</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleSettings} style={styles.panelButton}>
-            <Icon name="settings-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
-            <Text style={styles.panelButtonText}>Settings</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout} style={styles.panelButton}>
-            <Icon name="log-out-outline" size={28} color="#fff" style={styles.panelButtonIcon} />
-            <Text style={styles.panelButtonText}>Logout</Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-    </View>
-  );
-};
-
-// --- MAIN SCREEN ---
-export default function HomeScreen() {
-  const router = useRouter();
-  const { userProfile } = useUserProfile();
-  
-  // State
-  const [stores, setStores] = useState<StoreApplication[]>([]);
-  const [loading, setLoading] = useState(true);
+const useLocationTracker = () => {
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [hasLocPerm, setHasLocPerm] = useState(false);
-  
-  // UI State
-  const [flippedCardIndex, setFlippedCardIndex] = useState<number | null>(null);
-  const [flipHintDismissed, setFlipHintDismissed] = useState(false);
-  const [profilePanelOpen, setProfilePanelOpen] = useState(false);
-  const [selectedStore, setSelectedStore] = useState<StoreApplication | null>(null);
-  
-  // Animation Refs
-  const navTranslateY = useRef(new Animated.Value(0)).current;
-  const topNavOpacity = useRef(new Animated.Value(0)).current;
-  const topNavTranslateY = useRef(new Animated.Value(-100)).current;
-  const lastScrollY = useRef(0);
-  const isNavHidden = useRef(false);
 
-  // 1. Fetch Location
   useEffect(() => {
     let watcher: Location.LocationSubscription | null = null;
-
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== Location.PermissionStatus.GRANTED) return;
         setHasLocPerm(true);
 
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        if (location?.coords) {
-          setUserCoords({
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          });
-        }
+        // Get initial position quickly
+        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (location?.coords) setUserCoords(location.coords);
 
+        // Watch for changes
         watcher = await Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.High,
-            timeInterval: 4000,
-            distanceInterval: 5,
-          },
-          (pos) => {
-            if (pos?.coords) {
-              setUserCoords({
-                latitude: pos.coords.latitude,
-                longitude: pos.coords.longitude,
-              });
-            }
-          },
+          { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 5 },
+          (pos) => pos?.coords && setUserCoords(pos.coords)
         );
       } catch (e) {
         console.log('Location Error', e);
       }
     })();
-
-    return () => {
-      watcher?.remove();
-    };
+    return () => { watcher?.remove(); };
   }, []);
 
-  // 2. Fetch Stores
-  useEffect(() => {
-  const fetchStores = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('store_applications')
-      .select('*')
-        .eq('status', 'accepted')
-        .order('created_at', { ascending: false }); // Let Supabase do the sorting
+  return { userCoords, hasLocPerm };
+};
 
-      if (!error && data) {
-        setStores(data as StoreApplication[]);
-      }
+const useStoreFeed = () => {
+  const [stores, setStores] = useState<StoreApplication[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStores = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('store_applications')
+        .select('*')
+        .eq('status', 'accepted')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) setStores(data as StoreApplication[]);
       setLoading(false);
     };
     fetchStores();
   }, []);
 
-  // 3. Scroll Handler for Navbar and TopNav
-  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const currentY = e.nativeEvent.contentOffset.y;
-    const diff = currentY - lastScrollY.current;
-    const contentHeight = e.nativeEvent.contentSize.height;
-    const scrollViewHeight = e.nativeEvent.layoutMeasurement.height;
-    const maxScroll = contentHeight - scrollViewHeight;
-    
-    // Calculate scroll percentage (0-100%)
-    const scrollPercentage = maxScroll > 0 ? (currentY / maxScroll) * 100 : 0;
+  return { stores, loading };
+};
 
-    // Show TopNav when scrolled down 20% or more
-    if (scrollPercentage >= 20 && currentY > 0) {
-      Animated.parallel([
-        Animated.timing(topNavOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.timing(topNavTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(topNavOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.timing(topNavTranslateY, { toValue: -100, duration: 200, useNativeDriver: true }),
-      ]).start();
+// ---------------------------------------------------------
+// 2. SUB-COMPONENTS
+// ---------------------------------------------------------
+
+const HoldIndicator = ({ text = "Hold card to view details" }) => (
+  <View style={styles.holdIndicatorContainer}>
+    <Icon name="hand-left-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+    <Text style={styles.holdIndicatorText}>{text}</Text>
+  </View>
+);
+
+// (Ideally, move this ProfileSidePanel to its own file: components/ProfileSidePanel.tsx)
+const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClose: () => void; user: any }) => {
+  const router = useRouter();
+  const panelWidth = Math.min(320, Dimensions.get('window').width * 0.86);
+  const slideAnim = useRef(new Animated.Value(panelWidth)).current;
+
+  useEffect(() => {
+    Animated.timing(slideAnim, {
+      toValue: visible ? 0 : panelWidth,
+      duration: 300,
+      useNativeDriver: true,
+      easing: Easing.out(Easing.cubic),
+    }).start();
+  }, [visible]);
+
+  if (!visible && slideAnim ===  new Animated.Value(panelWidth)) return null; // Simple render check
+
+  const menuItems = [
+    { label: 'Profile', icon: 'person-circle-outline', action: () => router.push('/(tabs)/topNavTabs/profile') },
+    { label: 'My Store', icon: 'storefront-outline', action: () => router.push('/(tabs)/topNavTabs/myStore') },
+    { label: 'Saved Stores', icon: 'bookmark-outline', action: () => router.push('/(tabs)/savedstores') },
+    { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/topNavTabs/professionalTools') },
+    { label: 'Settings', icon: 'settings-outline', action: () => {} },
+    { label: 'Logout', icon: 'log-out-outline', action: async () => {
+        const { error } = await supabase.auth.signOut();
+        if (!error) router.replace('/(auth)/login');
+      } 
+    },
+  ];
+
+  return (
+    <View style={[StyleSheet.absoluteFill, { zIndex: 110, display: visible ? 'flex' : 'none' }]}>
+      <TouchableWithoutFeedback onPress={onClose}><View style={styles.panelOverlay} /></TouchableWithoutFeedback>
+      <Animated.View style={[styles.sidePanel, { width: panelWidth, transform: [{ translateX: slideAnim }] }]}>
+        <View style={styles.sidePanelBar}>
+          <Text style={styles.panelTitle}>Profile</Text>
+          <TouchableOpacity onPress={onClose}><Icon name="close" size={26} color="#fff" /></TouchableOpacity>
+        </View>
+
+        <View style={styles.sidePanelInfoArea}>
+          <Image source={{ uri: user?.avatar_url || 'https://via.placeholder.com/120' }} style={styles.panelAvatar} />
+          <View>
+            <Text style={styles.panelName}>{user?.full_name || 'User'}</Text>
+            <Text style={styles.panelEmail} numberOfLines={1}>{user?.email}</Text>
+          </View>
+        </View>
+
+        <View style={{ marginTop: 20 }}>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity key={index} onPress={() => { onClose(); item.action(); }} style={styles.panelButton}>
+              <Icon name={item.icon} size={28} color="#fff" style={styles.panelButtonIcon} />
+              <Text style={styles.panelButtonText}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Animated.View>
+    </View>
+  );
+};
+
+// ---------------------------------------------------------
+// 3. MAIN SCREEN
+// ---------------------------------------------------------
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const { userProfile } = useUserProfile();
+
+  // Custom Hooks
+  const { userCoords, hasLocPerm } = useLocationTracker();
+  const { stores, loading } = useStoreFeed();
+
+  // State
+  const [flippedCardIndex, setFlippedCardIndex] = useState<number | null>(null);
+  const [flipHintDismissed, setFlipHintDismissed] = useState(false);
+  const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<StoreApplication | null>(null);
+
+  // Animations
+  const navTranslateY = useRef(new Animated.Value(0)).current;
+  const topNavOpacity = useRef(new Animated.Value(0)).current;
+  const topNavTranslateY = useRef(new Animated.Value(-100)).current;
+  const lastScrollY = useRef(0);
+  const isNavHidden = useRef(false);
+
+  // SCROLL LIMIT LOGIC
+  // Remove/rework scroll limiting so you can scroll all the way down.
+  // Setting MAX_SCROLL to a very large number (or Infinity), or disabling the limit.
+  //const MAX_SCROLL = 2500; // REMOVE OR ADJUST THIS!
+  const MIN_SCROLL = 0;
+
+  // --- Handlers ---
+
+  // Track if we already forcibly scrolled, to avoid feedback loop
+  const forceScrollRef = useRef(false);
+
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // If programmatically set scroll, skip this pass
+    if (forceScrollRef.current) {
+      forceScrollRef.current = false;
+      return;
     }
 
-    // Scroll Down -> Hide Bottom Nav
+    let currentY = e.nativeEvent.contentOffset.y;
+    let overriden = false;
+
+    if (currentY < MIN_SCROLL) {
+      overriden = true;
+      currentY = MIN_SCROLL;
+    }
+    // Remove the max scroll limiting to allow full scroll down!
+    // else if (currentY > MAX_SCROLL) {
+    //   overriden = true;
+    //   currentY = MAX_SCROLL;
+    // }
+
+    if (overriden && scrollViewRef.current) {
+      forceScrollRef.current = true;
+      scrollViewRef.current.scrollTo({ y: currentY, animated: false });
+    }
+
+    // Usual header logic
+    const diff = currentY - lastScrollY.current;
+
+    // Top Nav Logic
+    const shouldShowTopNav = currentY > 150; // Simplified threshold
+    Animated.parallel([
+      Animated.timing(topNavOpacity, { toValue: shouldShowTopNav ? 1 : 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(topNavTranslateY, { toValue: shouldShowTopNav ? 0 : -100, duration: 200, useNativeDriver: true }),
+    ]).start();
+
+    // Bottom Nav Logic
     if (currentY > 50 && diff > 10 && !isNavHidden.current) {
       isNavHidden.current = true;
       Animated.timing(navTranslateY, { toValue: 100, duration: 250, useNativeDriver: true }).start();
-    } 
-    // Scroll Up -> Show Bottom Nav
-    else if ((diff < -10 || currentY <= 0) && isNavHidden.current) {
+    } else if ((diff < -10 || currentY <= 0) && isNavHidden.current) {
       isNavHidden.current = false;
       Animated.timing(navTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }).start();
     }
     lastScrollY.current = currentY;
   }, []);
 
-  const onCardFlip = useCallback((idx: number) => {
-    setFlippedCardIndex((prev) => (prev === idx ? null : idx));
-    setFlipHintDismissed(true); // Hide hint after any card flip
-  }, []);
-
-  const handleViewStore = useCallback((store: StoreApplication) => {
-    setSelectedStore(store);
-  }, []);
-  
-  // Only show the hold hint indicator on the first discover card, if not dismissed
-  const renderDiscoverCard = ({ item, index }: { item: StoreApplication; index: number }) => (
+  const renderDiscoverCard = useCallback(({ item, index }: { item: StoreApplication; index: number }) => (
     <View>
       <DiscoverFlipCard
         item={item}
@@ -318,26 +250,38 @@ export default function HomeScreen() {
         showFlipHint={!flipHintDismissed && index === 0}
         onFirstFlip={() => setFlipHintDismissed(true)}
         isFlipped={flippedCardIndex === index}
-        flipCard={() => onCardFlip(index)}
-        onViewProfile={handleViewStore}
+        flipCard={() => setFlippedCardIndex((prev) => (prev === index ? null : index))}
+        onViewProfile={(store) => setSelectedStore(store)}
       />
-      {!flipHintDismissed && index === 0 && (
-        <HoldIndicator style={styles.holdIndicatorPosition} />
-      )}
+      {!flipHintDismissed && index === 0 && <HoldIndicator style={styles.holdIndicatorPosition} />}
+    </View>
+  ), [flippedCardIndex, flipHintDismissed, userCoords, hasLocPerm]);
+
+  // --- THE SHADOW FIX IS HERE ---
+  const renderForYouCard = (item: StoreApplication) => (
+    <View style={styles.cardOuterShadowContainer} key={item.id}>
+      <View style={styles.cardInnerContent}>
+        <VerticalStoreCard
+          store={item}
+          onPress={() => setSelectedStore(item)}
+        />
+      </View>
     </View>
   );
 
   return (
     <View style={styles.container}>
+      {/* Scrollable Content */}
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={{ paddingBottom: 140 }}
         scrollEventThrottle={16}
         onScroll={handleScroll}
         showsVerticalScrollIndicator={false}
-        bounces={false}
+        // overScrollMode and bounces left as before.
         overScrollMode="never"
+        bounces={false}
       >
-        {/* Header */}
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Hi, {userProfile?.full_name?.split(' ')[0] || 'there'}!</Text>
@@ -348,8 +292,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Search */}
-        <TouchableOpacity style={styles.searchBar} onPress={() => router.push('/(tabs)/topNavTabs/search')} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.searchBar} onPress={() => router.push('/(tabs)/topNavTabs/search')}>
           <Icon name="search-outline" size={20} color="#999" style={{ marginRight: 10 }} />
           <Text style={styles.searchText}>Search stores...</Text>
         </TouchableOpacity>
@@ -358,67 +301,52 @@ export default function HomeScreen() {
           <ActivityIndicator size="large" color="#468dff" style={{ marginTop: 40 }} />
         ) : (
           <>
-            {/* Horizontal Scroll (Discover) */}
             <Text style={styles.sectionHeader}>Discover</Text>
             {stores.length > 0 ? (
-                <FlatList
-                  horizontal
-                  data={stores}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderDiscoverCard}
-                  bounces={false}
-                  overScrollMode="never"
-                />
+              <FlatList
+                horizontal
+                data={stores}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}
+                keyExtractor={(item) => item.id}
+                renderItem={renderDiscoverCard}
+              />
             ) : (
               <View style={styles.emptyBox}><Text style={styles.emptyText}>No stores found.</Text></View>
             )}
 
-            {/* Vertical List (For You) */}
             <Text style={styles.sectionHeader}>For you</Text>
-            {stores.map((item) => (
-              <VerticalStoreCard
-                key={item.id}
-                store={item}
-                onPress={() => handleViewStore(item)}
-              />
-            ))}
+            {stores.map((item) => renderForYouCard(item))}
           </>
         )}
       </ScrollView>
 
-      {/* Overlays */}
+      {/* Modals & Overlays */}
       <ProfileSidePanel visible={profilePanelOpen} onClose={() => setProfilePanelOpen(false)} user={userProfile} />
-
+      
       <StoreProfileModal
         visible={Boolean(selectedStore)}
         store={selectedStore}
         onClose={() => setSelectedStore(null)}
         userCoords={userCoords}
       />
-      
-      {/* TopNav - Shows when scrolled down 20% */}
-      <Animated.View 
-        style={[
-          styles.topNavContainer, 
-          { 
-            opacity: topNavOpacity,
-            transform: [{ translateY: topNavTranslateY }] 
-          }
-        ]}
-      >
+
+      {/* Navigation Bars */}
+      <Animated.View style={[styles.topNavContainer, { opacity: topNavOpacity, transform: [{ translateY: topNavTranslateY }] }]}>
         <TopNav />
       </Animated.View>
       
       <Animated.View style={[styles.bottomNavContainer, { transform: [{ translateY: navTranslateY }] }]}>
-      <BottomNav visible />
+        <BottomNav visible />
       </Animated.View>
     </View>
   );
 }
 
-// Override discover card overlay/background/text for invisibility
+// ---------------------------------------------------------
+// 4. STYLES
+// ---------------------------------------------------------
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   
@@ -442,7 +370,7 @@ const styles = StyleSheet.create({
   // Search
   searchBar: {
     backgroundColor: '#fff',
-    marginTop: 15, // moved from -25 to 15 for lowering
+    marginTop: 15,
     marginHorizontal: 20,
     padding: 12,
     borderRadius: 15,
@@ -453,108 +381,61 @@ const styles = StyleSheet.create({
   },
   searchText: { color: '#999', fontSize: 16 },
 
-  // Sections
+  // Content
   sectionHeader: { fontSize: 22, fontWeight: '700', marginLeft: 20, marginTop: 25, marginBottom: 15 },
   emptyBox: { alignItems: 'center', padding: 20 },
   emptyText: { color: '#888' },
 
-  // --- Hold Indicator
+  // --- FOR YOU CARD SHADOW FIX ---
+  // 1. The Outer Container has the Shadow
+  cardOuterShadowContainer: {
+    marginHorizontal: 20,
+    marginBottom: 18,
+    backgroundColor: 'transparent', // Let shadow be the only decoration here
+    // iOS Shadow
+    shadowColor: "#000",
+    shadowOpacity: 0.2, 
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    // Android Shadow
+    elevation: 6,
+  },
+  // 2. The Inner Container has the rounding and clipping
+  cardInnerContent: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    overflow: 'hidden', // This clips the VerticalStoreCard to the rounded corners
+  },
+
+  // Hold Indicator
   holdIndicatorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#222',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    alignSelf: 'flex-start',
-    opacity: 0.94,
-    marginTop: 5,
-    elevation: 3,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', borderRadius: 14,
+    paddingHorizontal: 12, paddingVertical: 5, alignSelf: 'flex-start', opacity: 0.94, marginTop: 5, elevation: 3,
   },
-  holdIndicatorText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '500',
-    letterSpacing: 0.1,
-  },
-  holdIndicatorPosition: {
-    position: 'absolute',
-    left: 18,
-    bottom: 15,
-    zIndex: 15,
-  },
+  holdIndicatorText: { color: '#fff', fontSize: 13, fontWeight: '500' },
+  holdIndicatorPosition: { position: 'absolute', left: 18, bottom: 15, zIndex: 15 },
 
   // Side Panel
   panelOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
   sidePanel: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(25,24,32,0.99)',
-    paddingTop: 40,
-    paddingHorizontal: 20,
-    borderTopLeftRadius: 30,
-    borderBottomLeftRadius: 30,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    elevation: 10,
+    position: 'absolute', right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(25,24,32,0.99)',
+    paddingTop: 40, paddingHorizontal: 20, borderTopLeftRadius: 30, borderBottomLeftRadius: 30,
+    shadowColor: '#000', shadowOpacity: 0.2, elevation: 10,
   },
-  sidePanelBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  panelTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  sidePanelInfoArea: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingLeft: 4,
-    paddingRight: 8,
-  },
+  sidePanelBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
+  panelTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
+  sidePanelInfoArea: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingLeft: 4 },
   panelAvatar: { width: 64, height: 64, borderRadius: 32, marginRight: 20, backgroundColor: '#eee' },
-  panelName: { fontSize: 20, fontWeight: 'bold', marginBottom: 2, color: '#fff', textAlign: 'left' },
-  panelEmailRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
-  panelEmail: { color: '#fff', maxWidth: 190, textAlign: 'left' },
-  panelButtonsContainer: {
-    marginTop: 3,
-  },
-  panelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 18, // bigger touch area
-    paddingLeft: 4,
-    borderRadius: 0,
-    marginBottom: 1,
-    backgroundColor: 'transparent', // invisible
-    borderWidth: 0,
-    elevation: 0,
-  },
+  panelName: { fontSize: 20, fontWeight: 'bold', marginBottom: 2, color: '#fff' },
+  panelEmail: { color: '#fff', maxWidth: 190 },
+  panelButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 18, backgroundColor: 'transparent' },
   panelButtonIcon: { marginRight: 18 },
   panelButtonText: { color: '#fff', fontSize: 20, fontWeight: '600' },
 
-  // Top Nav
+  // Navs
   topNavContainer: { 
-    position: 'absolute', 
-    left: 0, 
-    right: 0, 
-    top: 0, 
-    zIndex: 100,
-    backgroundColor: '#fff',
-    paddingBottom: 10,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    position: 'absolute', left: 0, right: 0, top: 0, zIndex: 100, backgroundColor: '#fff', paddingBottom: 10,
+    elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
   },
-  
-  // Bottom Nav
   bottomNavContainer: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 100 },
 });

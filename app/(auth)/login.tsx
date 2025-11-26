@@ -1,6 +1,4 @@
-import * as Google from "expo-auth-session/providers/google";
 import { router } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, FlatList, Modal, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -11,18 +9,12 @@ import { languageResources } from "../../services/i18next";
 import languagesList from "../../services/languagesList.json";
 import { styles as s } from '../../styles/authStyles';
 
-WebBrowser.maybeCompleteAuthSession();
-
 export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: "162487546610-hpbjrr32fp5o84q17fj9lpo1jjdmrphb.apps.googleusercontent.com",
-    webClientId: "162487546610-6q08sq3gmask3sgujek29f3t35kfqgj4.apps.googleusercontent.com",
-  });
 
   async function signInWithEmail() {
     setLoading(true)
@@ -52,23 +44,6 @@ const { changeLanguage, currentLanguage } = useLanguage();
     console.log('Language button pressed, opening modal');
     setLanguageModalVisible(true);
   };
-
-  React.useEffect(() => {
-    async function handleGoogle() {
-      if (response?.type === "success") {
-        const { authentication } = response;
-
-        const { data, error } = await supabase.auth.signInWithIdToken({
-          provider: "google",
-          token: authentication?.idToken ?? "",
-        });
-
-        if (error) Alert.alert(error.message);
-      }
-    }
-
-    handleGoogle();
-  }, [response]);
 
   return (
     
@@ -122,17 +97,6 @@ const { changeLanguage, currentLanguage } = useLanguage();
 
       <TouchableOpacity style={s.button} onPress={() => { if (!loading) { signInWithEmail() } }}>
         <Text style={s.buttonText}>{t('Login')}</Text>
-      </TouchableOpacity>
-
-      <Text style={s.secondaryText}>{t('or continue with')}</Text>
-
-      <TouchableOpacity
-        style={[s.inputContainer, { justifyContent: "center" }]}
-        onPress={() => promptAsync()}
-        disabled={!request}
-      >
-        <Icon name="logo-google" size={20} color="#FFFFFF" />
-        <Text style={[s.input, { textAlign: "center" }]}>Google</Text>
       </TouchableOpacity>
 
       <Text style={s.secondaryText}>

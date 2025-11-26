@@ -1,6 +1,6 @@
 import { usePathname, useRouter } from "expo-router";
 import React, { useEffect } from "react";
-import { Text, TouchableOpacity, View, Dimensions, StyleSheet } from "react-native";
+import { Text, TouchableOpacity, View, Dimensions } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,7 +10,6 @@ import Animated, {
 
 const { width: screenWidth } = Dimensions.get("window");
 
-// --- Types ---
 type Tab = {
   key: string;
   label: string;
@@ -21,14 +20,12 @@ type TopNavProps = {
   forYouActive?: boolean;
 };
 
-// --- Component ---
 export default function TopNav({ forYouActive }: TopNavProps) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Shared values for animation
-  const indicatorPositionX = useSharedValue(0); // X-offset for the indicator
-  const indicatorWidth = useSharedValue(0); // Width for the indicator
+  const indicatorPositionX = useSharedValue(0);
+  const indicatorWidth = useSharedValue(0);
 
   const tabs: Tab[] = [
     { key: "search", label: "Search", route: "/(tabs)/topNavTabs/search" },
@@ -36,12 +33,8 @@ export default function TopNav({ forYouActive }: TopNavProps) {
     { key: "profile", label: "Profile", route: "/(tabs)/topNavTabs/profile" },
   ];
 
-  // Helper function to determine the active key
   const getActiveKey = () => {
-    // 1. Check for the externally controlled "For You" state (highest priority)
     if (forYouActive === true) return "forYou";
-
-    // 2. Check path-based logic
     if (
       pathname.includes("forYou") ||
       pathname.endsWith("/discover") ||
@@ -51,17 +44,13 @@ export default function TopNav({ forYouActive }: TopNavProps) {
     }
     if (pathname.includes("search")) return "search";
     if (pathname.includes("profile")) return "profile";
-
-    return ""; // Default or no match
+    return "";
   };
 
   const activeKey = getActiveKey();
-
-  // Calculate tab width and positions (assuming equal flex distribution)
   const tabWidth = screenWidth / tabs.length;
-  const indicatorWidthValue = tabWidth * 0.6; // 60% of tab width for indicator
+  const indicatorWidthValue = tabWidth * 0.6;
 
-  // Function to animate the indicator to the active tab
   const animateIndicator = (tabIndex: number) => {
     const centerX = tabIndex * tabWidth + tabWidth / 2 - indicatorWidthValue / 2;
     indicatorPositionX.value = withTiming(centerX, {
@@ -75,31 +64,29 @@ export default function TopNav({ forYouActive }: TopNavProps) {
   };
 
   useEffect(() => {
-    const activeIndex = tabs.findIndex(tab => tab.key === activeKey);
+    const activeIndex = tabs.findIndex(tab => tab.key === activeKey && tab.key !== "forYou");
     if (activeIndex !== -1) {
       animateIndicator(activeIndex);
+    } else {
+      indicatorWidth.value = withTiming(0, { duration: 200 });
     }
   }, [activeKey]);
 
-  // Animated style for the sliding indicator
-  const animatedIndicatorStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ translateX: indicatorPositionX.value }],
-      width: indicatorWidth.value,
-      opacity: indicatorWidth.value > 0 ? 1 : 0, // Fade in when width is set
-    };
-  });
+  const animatedIndicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: indicatorPositionX.value }],
+    width: indicatorWidth.value,
+    opacity: indicatorWidth.value > 0 ? 1 : 0,
+  }));
 
   return (
     <>
-      {/* Background cover to prevent transparency and handle shadows */}
       <View
         style={{
           position: "absolute",
           top: 0,
           left: 0,
           right: 0,
-          height: 120, // Covers enough vertical space for header
+          height: 120,
           backgroundColor: "#fff",
           zIndex: 1,
           shadowColor: "#000",
@@ -112,7 +99,6 @@ export default function TopNav({ forYouActive }: TopNavProps) {
         }}
         pointerEvents="none"
       />
-      {/* Navigation Bar */}
       <View
         style={{
           position: "absolute",
@@ -125,7 +111,7 @@ export default function TopNav({ forYouActive }: TopNavProps) {
           zIndex: 10,
         }}
       >
-        {/* Animated Indicator */}
+        {/* Animated Indicator for Search/Profile */}
         <Animated.View
           style={[
             {
@@ -133,13 +119,11 @@ export default function TopNav({ forYouActive }: TopNavProps) {
               height: 3,
               backgroundColor: "#007AFF",
               borderRadius: 2,
-              top: 40, // Below the text
+              top: 40,
             },
             animatedIndicatorStyle,
           ]}
         />
-
-        {/* Tab Buttons */}
         <View
           style={{
             flexDirection: "row",
@@ -152,6 +136,7 @@ export default function TopNav({ forYouActive }: TopNavProps) {
         >
           {tabs.map((tab, index) => {
             const isActive = tab.key === activeKey;
+            const showForYouUnderline = tab.key === "forYou" && isActive;
             return (
               <TouchableOpacity
                 key={tab.key}
@@ -161,6 +146,7 @@ export default function TopNav({ forYouActive }: TopNavProps) {
                   alignItems: "center",
                   paddingVertical: 10,
                   backgroundColor: "#fff",
+                  justifyContent: "flex-end",
                 }}
                 activeOpacity={0.7}
               >
@@ -174,6 +160,19 @@ export default function TopNav({ forYouActive }: TopNavProps) {
                 >
                   {tab.label}
                 </Text>
+                {/* Black underline, shorter for For You tab when active */}
+                {showForYouUnderline && (
+                  <View
+                    style={{
+                      marginTop: 6,
+                      height: 2.5,
+                      width: tabWidth * 0.35, // Shorter line
+                      backgroundColor: "#000",
+                      borderRadius: 1.5,
+                      alignSelf: "center",
+                    }}
+                  />
+                )}
               </TouchableOpacity>
             );
           })}

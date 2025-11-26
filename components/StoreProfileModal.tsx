@@ -459,6 +459,15 @@ export default function StoreProfileModal({
             <Text style={styles.emptyText}>Location unavailable.</Text>
           )}
         </View>
+
+        {/* Current Promotions Container */}
+        <View style={styles.promotionsCard}>
+          <Text style={styles.promotionsTitle}>Current Promotions</Text>
+          {/* You may add dynamic promotions data display here in the future */}
+          <Text style={styles.promotionsText}>
+            No promotions currently available.
+          </Text>
+        </View>
       </ScrollView>
     </Modal>
   );
@@ -659,5 +668,26 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#777',
     marginBottom: 12,
+  },
+  // Promotions card styles
+  promotionsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 34,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  promotionsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  promotionsText: {
+    color: '#444',
+    fontSize: 15,
+    marginBottom: 6,
   },
 });

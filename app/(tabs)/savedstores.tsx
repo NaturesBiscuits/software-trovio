@@ -4,8 +4,107 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
-import VerticalStoreCard from "../../components/VerticalStoreCard";
 import StoreProfileModal, { removeSavedStoreId } from "../../components/StoreProfileModal";
+
+// VerticalStoreCardWithHeart: a local wrapper that adds an inline heart button
+function VerticalStoreCardWithHeart({ store, onPress, onUnfavorite }: {
+  store: StoreApplication,
+  onPress?: () => void,
+  onUnfavorite?: (store: StoreApplication) => void,
+}) {
+  return (
+    <View style={styles.cardContainer}>
+      <TouchableOpacity
+        style={styles.storeCardTouchable}
+        activeOpacity={0.9}
+        onPress={onPress}
+      >
+        <View style={styles.imageContainer}>
+          <VerticalStoreCardOnlyImage store={store} />
+        </View>
+
+        <View style={styles.inlineInfoRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.verticalTitle}>{store.store_name || 'Unnamed Store'}</Text>
+            <View style={styles.verticalRow}>
+              <Ionicons name="location-outline" size={14} color="#be3e3e" />
+              <Text style={styles.verticalAddress} numberOfLines={1}>
+                {store.address || 'No address'}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.inlineHeartButton}
+            onPress={() => onUnfavorite && onUnfavorite(store)}
+            activeOpacity={0.7}
+            testID="inline-heart"
+          >
+            <Ionicons name="heart" size={22} color="red" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// A small local helper to render only the image area of VerticalStoreCard, in order to preserve image loading logic.
+import OriginalVerticalStoreCard from "../../components/VerticalStoreCard";
+function VerticalStoreCardOnlyImage({ store }: { store: StoreApplication }) {
+  // This component renders only the image/placeholder part from VerticalStoreCard
+  // To keep code DRY and avoid duplicating all the image loading logic, you can either
+  //   - factor out image logic from VerticalStoreCard, OR
+  //   - simply use OriginalVerticalStoreCard here with a "onlyImage" prop
+  // For brevity, let's use the original card and overlay everything else above the image.
+  // But in a production refactor, ideally extract the image logic.
+  // So, here, we just render OriginalVerticalStoreCard and overlay our content above image.
+  // But since we want tight control here, let's mimic the image area:
+
+  // --- COPIED IMAGE LOADING LOGIC ---
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  // For fade-in/out, we omit for brevity
+
+  useEffect(() => {
+    let isActive = true;
+    const doLoad = async () => {
+      if (store.photos_url?.length && store.user_id) {
+        setImageLoading(true);
+        const { getStorageImageUrls } = await import("../../lib/storageUtils");
+        const urls = await getStorageImageUrls(store.photos_url, store.user_id);
+        if (!isActive) return;
+        const filtered = urls.filter((url: any): url is string => Boolean(url));
+        setImageUrls(filtered);
+        setCurrentPhotoIndex(0);
+      } else {
+        setImageUrls([]);
+      }
+      if (isActive) setImageLoading(false);
+    };
+    doLoad();
+    return () => { isActive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.photos_url, store.user_id]);
+  // --- END IMAGE LOADING LOGIC ---
+
+  return (
+    <View style={styles.imageContainer}>
+      {imageUrls.length > 0 && !imageLoading ? (
+        <Image
+          source={{ uri: imageUrls[currentPhotoIndex] }}
+          style={styles.verticalImg}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.verticalPlaceholder}>
+          <Text style={styles.placeholderIcon}>📷</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+import { Image } from "react-native"; // needed for the image rendering above
 
 export default function FavouritesScreen() {
   const router = useRouter();
@@ -18,7 +117,6 @@ export default function FavouritesScreen() {
   const fetchSavedStores = useCallback(async () => {
     setLoading(true);
     try {
-      // Get current authenticated user
       const { data: userData, error: userError } = await supabase.auth.getUser();
       const userId = userData?.user?.id;
       if (userError || !userId) {
@@ -26,8 +124,6 @@ export default function FavouritesScreen() {
         setLoading(false);
         return;
       }
-
-      // Fetch favorite store IDs for this user
       const { data: favorites, error: favError } = await supabase
         .from("user_favorite_stores")
         .select("store_id")
@@ -41,7 +137,6 @@ export default function FavouritesScreen() {
 
       const ids = favorites.map(f => f.store_id);
 
-      // Query ALL store_applications whose id is in saved ids.
       const { data, error } = await supabase
         .from("store_applications")
         .select("*")
@@ -49,7 +144,6 @@ export default function FavouritesScreen() {
 
       if (error) throw error;
 
-      // Keep same order as ids
       const dataOrEmpty = data || [];
       const ordered = ids
         .map(id => dataOrEmpty.find(d => d.id === id))
@@ -66,7 +160,6 @@ export default function FavouritesScreen() {
 
   const handleUnfavorite = useCallback(
     async (store: StoreApplication) => {
-      // Confirm with the user before removing
       const confirm = await new Promise<boolean>((resolve) => {
         Alert.alert(
           "Remove favourite",
@@ -87,11 +180,7 @@ export default function FavouritesScreen() {
         if (userError || !userId) {
           return;
         }
-
-        // Optimistically remove from local list
         setSavedStores(prev => prev.filter(s => s.id !== store.id));
-
-        // Keep local AsyncStorage in sync with favorites
         await removeSavedStoreId(store.id);
 
         const { error } = await supabase
@@ -101,7 +190,6 @@ export default function FavouritesScreen() {
 
         if (error) {
           console.error("Error removing favorite store:", error);
-          // Optionally refetch to keep in sync
           fetchSavedStores();
         }
       } catch (e) {
@@ -134,16 +222,11 @@ export default function FavouritesScreen() {
 
   // Card rendering
   const renderCard = ({ item }: { item: StoreApplication }) => (
-    <View style={styles.card}>
-      <VerticalStoreCard store={item} onPress={() => handleOpenStore(item)} />
-      <TouchableOpacity
-        style={styles.heartButton}
-        onPress={() => handleUnfavorite(item)}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="heart" size={22} color="red" />
-      </TouchableOpacity>
-    </View>
+    <VerticalStoreCardWithHeart
+      store={item}
+      onPress={() => handleOpenStore(item)}
+      onUnfavorite={handleUnfavorite}
+    />
   );
 
   return (
@@ -187,6 +270,7 @@ export default function FavouritesScreen() {
   );
 }
 
+// Styles: add new ones for the inline layout
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -214,19 +298,75 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  /* Card */
-  card: {
+  /* Card Inline Heart */
+  cardContainer: {
     width: "100%",
-    position: "relative",
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    overflow: "hidden",
     marginBottom: 0,
     marginTop: 0,
+    // Visible border
+    borderWidth: 1.2,
+    borderColor: "#dedede"
   },
-  heartButton: {
-    position: "absolute",
-    top: 18,
-    right: 28,
+  storeCardTouchable: {
+    flex: 1,
+  },
+  imageContainer: {
+    width: "100%",
+    height: 200,
+    overflow: "hidden",
+  },
+  verticalImg: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  verticalPlaceholder: {
+    width: "100%",
+    height: 200,
+    backgroundColor: "#eee",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  placeholderIcon: {
+    fontSize: 40,
+  },
+  inlineInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 15,
+    paddingBottom: 15,
+    paddingTop: 16,
+  },
+  verticalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 5,
+    color: "#333",
+    lineHeight: 22,
+  },
+  verticalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  verticalAddress: {
+    fontSize: 13,
+    color: "#666",
+    marginLeft: 4,
+    maxWidth: 180,
+  },
+  inlineHeartButton: {
+    marginLeft: 14,
     backgroundColor: "rgba(255,255,255,0.9)",
     borderRadius: 16,
     padding: 6,
+    alignSelf: "flex-start",
+    top: 0,
   },
 });

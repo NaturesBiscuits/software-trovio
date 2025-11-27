@@ -142,16 +142,7 @@ const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClos
     // Professional Tools button now pushes to /proftools
     { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/proftools') },
     { label: 'Settings', icon: 'settings-outline', action: () => {} },
-    { label: 'Logout', icon: 'log-out-outline', action: async () => {
-        // Clear image cache before logout
-        const { clearImageCache } = await import('../../lib/imageUtils');
-        const { clearImageUrlCache } = await import('../../lib/imageCache');
-        await clearImageCache();
-        await clearImageUrlCache();
-        const { error } = await supabase.auth.signOut();
-        if (!error) router.replace('/(auth)/login');
-      } 
-    },
+    // Only one logout: the one with confirmation dialog
     { label: 'Logout', icon: 'log-out-outline', action: handleLogout },
   ];
 

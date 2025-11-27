@@ -9,8 +9,10 @@ import {
   Easing,
   FlatList,
   Image,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +27,7 @@ import { supabase } from '../../lib/supabase';
 import BottomNav from '../../components/BottomNav';
 import DiscoverFlipCard, { StoreApplication, StorePromotion } from '../../components/DiscoverFlipCard';
 import StoreProfileModal from '../../components/StoreProfileModal';
+import StoreRouteMap from '../../components/StoreRouteMap';
 import TopNav from '../../components/TopNav';
 import VerticalStoreCard from '../../components/VerticalStoreCard';
 import { useUserProfile } from '../../context/UserProfileContext';
@@ -133,7 +136,17 @@ const HoldIndicator = ({ text = "Hold card to view details" }) => (
 );
 
 // (Ideally, move this ProfileSidePanel to its own file: components/ProfileSidePanel.tsx)
-const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClose: () => void; user: any }) => {
+const ProfileSidePanel = ({
+  visible,
+  onClose,
+  user,
+  hasProAccess = false,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  user: any;
+  hasProAccess?: boolean;
+}) => {
   const router = useRouter();
   const panelWidth = Math.min(320, Dimensions.get('window').width * 0.86);
   const slideAnim = useRef(new Animated.Value(panelWidth)).current;
@@ -171,11 +184,13 @@ const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClos
 
   const menuItems = [
     { label: 'Profile', icon: 'person-circle-outline', action: () => router.push('/(tabs)/topNavTabs/profile') },
-    // CHANGED: Directly go to the actual myStore file
-    { label: 'My Store', icon: 'storefront-outline', action: () => router.push('/(tabs)/mystore') },
+    ...(hasProAccess
+      ? [
+          { label: 'My Store', icon: 'storefront-outline', action: () => router.push('/(tabs)/mystore') },
+          { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/proftools') },
+        ]
+      : []),
     { label: 'Saved Stores', icon: 'bookmark-outline', action: () => router.push('/(tabs)/savedstores') },
-    // Professional Tools button now pushes to /proftools
-    { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/proftools') },
     { label: 'Settings', icon: 'settings-outline', action: () => {} },
     // Only one logout: the one with confirmation dialog
     { label: 'Logout', icon: 'log-out-outline', action: handleLogout },
@@ -211,6 +226,61 @@ const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClos
   );
 };
 
+const RoutePreviewModal = ({
+  visible,
+  store,
+  userCoords,
+  onClose,
+}: {
+  visible: boolean;
+  store: StoreApplication | null;
+  userCoords: { latitude: number; longitude: number } | null;
+  onClose: () => void;
+}) => {
+  if (!store) return null;
+
+  const hasCoords = typeof store.latitude === 'number' && typeof store.longitude === 'number';
+  const destination = hasCoords
+    ? { latitude: store.latitude as number, longitude: store.longitude as number }
+    : undefined;
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={styles.routeModalContainer}>
+        <View style={styles.routeModalHeader}>
+          <TouchableOpacity style={styles.routeModalBack} onPress={onClose}>
+            <Icon name="chevron-back" size={24} color="#111" />
+          </TouchableOpacity>
+          <Text style={styles.routeModalTitle} numberOfLines={1}>
+            {store.store_name || 'Route preview'}
+          </Text>
+          <View style={styles.routeModalSpacer} />
+        </View>
+        <Text style={styles.routeModalAddress} numberOfLines={2}>
+          {store.address || 'No address available'}
+        </Text>
+        {destination ? (
+          <StoreRouteMap
+            origin={userCoords ?? undefined}
+            destination={destination}
+            containerStyle={styles.routeMapExpanded}
+            navigateLabel="Center Map"
+          />
+        ) : (
+          <View style={styles.routeModalEmpty}>
+            <Text style={styles.routeModalEmptyText}>Location unavailable.</Text>
+          </View>
+        )}
+      </SafeAreaView>
+    </Modal>
+  );
+};
+
 // ---------------------------------------------------------
 // 3. MAIN SCREEN
 // ---------------------------------------------------------
@@ -234,6 +304,8 @@ export default function HomeScreen() {
   const [flipHintDismissed, setFlipHintDismissed] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [selectedStore, setSelectedStore] = useState<StoreApplication | null>(null);
+  const [hasProfessionalAccess, setHasProfessionalAccess] = useState(false);
+  const [routePreviewStore, setRoutePreviewStore] = useState<StoreApplication | null>(null);
 
   // Animations
   const navTranslateY = useRef(new Animated.Value(0)).current;
@@ -301,6 +373,46 @@ export default function HomeScreen() {
     lastScrollY.current = currentY;
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkProfessionalAccess = async () => {
+      if (!userProfile?.id) {
+        if (isMounted) setHasProfessionalAccess(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('store_applications')
+          .select('id')
+          .eq('user_id', userProfile.id)
+          .eq('status', 'accepted')
+          .limit(1);
+
+        if (!isMounted) return;
+        if (error) {
+          console.error('Error checking professional access:', error);
+          setHasProfessionalAccess(false);
+          return;
+        }
+
+        setHasProfessionalAccess(Boolean(data && data.length > 0));
+      } catch (err) {
+        if (isMounted) {
+          console.error('Unexpected error checking professional access:', err);
+          setHasProfessionalAccess(false);
+        }
+      }
+    };
+
+    checkProfessionalAccess();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userProfile?.id]);
+
   const renderDiscoverCard = useCallback(({ item, index }: { item: StoreApplication; index: number }) => (
     <View>
       <DiscoverFlipCard
@@ -312,6 +424,7 @@ export default function HomeScreen() {
         isFlipped={flippedCardIndex === index}
         flipCard={() => setFlippedCardIndex((prev) => (prev === index ? null : index))}
         onViewProfile={(store) => setSelectedStore(store)}
+        onNavigate={(store) => setRoutePreviewStore(store)}
       />
       {!flipHintDismissed && index === 0 && (
         <View style={styles.holdIndicatorPosition}>
@@ -386,13 +499,25 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Modals & Overlays */}
-      <ProfileSidePanel visible={profilePanelOpen} onClose={() => setProfilePanelOpen(false)} user={userProfile} />
+      <ProfileSidePanel
+        visible={profilePanelOpen}
+        onClose={() => setProfilePanelOpen(false)}
+        user={userProfile}
+        hasProAccess={hasProfessionalAccess}
+      />
       
       <StoreProfileModal
         visible={Boolean(selectedStore)}
         store={selectedStore}
         onClose={() => setSelectedStore(null)}
         userCoords={userCoords}
+      />
+
+      <RoutePreviewModal
+        visible={Boolean(routePreviewStore)}
+        store={routePreviewStore}
+        userCoords={userCoords}
+        onClose={() => setRoutePreviewStore(null)}
       />
 
       {/* Navigation Bars */}
@@ -502,4 +627,59 @@ const styles = StyleSheet.create({
     elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
   },
   bottomNavContainer: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 100 },
+
+  // Route preview modal
+  routeModalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 30,
+  },
+  routeModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  routeModalBack: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f1f1f1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  routeModalTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111',
+  },
+  routeModalSpacer: {
+    width: 40,
+  },
+  routeModalAddress: {
+    color: '#555',
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  routeMapExpanded: {
+    flex: 1,
+    width: '100%',
+    height: undefined,
+    marginTop: 0,
+  },
+  routeModalEmpty: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#ccc',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routeModalEmptyText: {
+    color: '#999',
+  },
 });

@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
-  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -51,6 +50,7 @@ interface DiscoverFlipCardProps {
   flipCard: () => void;
   hasLocationPermission: boolean;
   onViewProfile?: (store: StoreApplication) => void;
+  onNavigate?: (store: StoreApplication) => void;
 }
 
 // Calculate distance outside component to keep it pure
@@ -81,6 +81,7 @@ export default React.memo(function DiscoverFlipCard({
   flipCard,
   hasLocationPermission,
   onViewProfile,
+  onNavigate,
 }: DiscoverFlipCardProps) {
   const flipAnim = useRef(new Animated.Value(0)).current;
   const [imageUrls, setImageUrls] = useState<string[]>([]);
@@ -154,10 +155,9 @@ export default React.memo(function DiscoverFlipCard({
     };
   }, [item.activePromotion?.image_url, item.user_id]);
 
-  const { distanceStr, pathLink, locationStatus } = useMemo(() => {
+  const { distanceStr, locationStatus } = useMemo(() => {
     let status: 'has' | 'no-permission' | 'no-store-location' = 'has';
     let distStr: string | null = null;
-    let link: string | null = null;
 
     if (!hasLocationPermission) status = 'no-permission';
     else if (!item.latitude || !item.longitude) status = 'no-store-location';
@@ -169,10 +169,9 @@ export default React.memo(function DiscoverFlipCard({
         item.longitude
       );
       distStr = meters > 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`;
-      link = `https://www.google.com/maps/dir/?api=1&origin=${userCoords.latitude},${userCoords.longitude}&destination=${item.latitude},${item.longitude}&travelmode=walking`;
     }
 
-    return { distanceStr: distStr, pathLink: link, locationStatus: status };
+    return { distanceStr: distStr, locationStatus: status };
   }, [userCoords, item.latitude, item.longitude, hasLocationPermission]);
 
   useEffect(() => {
@@ -237,9 +236,12 @@ export default React.memo(function DiscoverFlipCard({
 
   const hasPromotion = Boolean(item.activePromotion);
 
-  const handleNavigate = () => {
-    if (pathLink) Linking.openURL(pathLink);
-  };
+  const canNavigate =
+    Boolean(onNavigate) &&
+    isFlipped &&
+    locationStatus === 'has' &&
+    typeof item.latitude === 'number' &&
+    typeof item.longitude === 'number';
 
   const renderPromotionFront = () => (
     <View style={styles.promotionCardContent}>
@@ -358,9 +360,9 @@ export default React.memo(function DiscoverFlipCard({
           </View>
 
           <TouchableOpacity
-            style={[styles.navButton, { opacity: isFlipped && pathLink ? 1 : 0.5 }]}
-            disabled={!isFlipped || !pathLink}
-            onPress={handleNavigate}
+            style={[styles.navButton, { opacity: canNavigate ? 1 : 0.5 }]}
+            disabled={!canNavigate}
+            onPress={() => onNavigate?.(item)}
           >
             <Icon name="navigate-circle-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
             <Text style={styles.navButtonText}>Navigate</Text>

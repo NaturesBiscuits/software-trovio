@@ -1,3 +1,4 @@
+import * as Location from "expo-location";
 import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -113,6 +114,7 @@ export default function FavouritesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedStore, setSelectedStore] = useState<StoreApplication | null>(null);
+  const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const fetchSavedStores = useCallback(async () => {
     setLoading(true);
@@ -203,6 +205,27 @@ export default function FavouritesScreen() {
     fetchSavedStores();
   }, [fetchSavedStores]);
 
+  useEffect(() => {
+    let watcher: Location.LocationSubscription | null = null;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== Location.PermissionStatus.GRANTED) return;
+        const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (current?.coords) setUserCoords(current.coords);
+        watcher = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 5000 },
+          (pos) => pos?.coords && setUserCoords(pos.coords)
+        );
+      } catch (error) {
+        console.warn("Saved stores location error", error);
+      }
+    })();
+    return () => {
+      watcher?.remove();
+    };
+  }, []);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchSavedStores().finally(() => setRefreshing(false));
@@ -264,7 +287,7 @@ export default function FavouritesScreen() {
         visible={!!selectedStore}
         store={selectedStore}
         onClose={handleCloseStore}
-        userCoords={null}
+        userCoords={userCoords}
       />
     </View>
   );

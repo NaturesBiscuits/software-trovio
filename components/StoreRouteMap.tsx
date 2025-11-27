@@ -1,18 +1,26 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MapView, { LatLng, Marker, Region } from 'react-native-maps';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import MapView, { LatLng, Marker, Polyline, Region } from 'react-native-maps';
 import Icon from 'react-native-vector-icons/Ionicons';
 
 interface StoreRouteMapProps {
   origin?: LatLng | null;
   destination?: LatLng | null;
+  containerStyle?: StyleProp<ViewStyle>;
+  onNavigatePress?: () => void;
+  navigateLabel?: string;
 }
 
 export default function StoreRouteMap({
   origin,
   destination,
+  containerStyle,
+  onNavigatePress,
+  navigateLabel = 'Center on Route',
 }: StoreRouteMapProps) {
   const mapRef = useRef<MapView | null>(null);
+  const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
+  const [routeLoading, setRouteLoading] = useState(false);
 
   const region = useMemo<Region | undefined>(() => {
     if (destination) {
@@ -26,27 +34,81 @@ export default function StoreRouteMap({
     return undefined;
   }, [destination]);
 
+  const focusOnRoute = useCallback(
+    (animated = true) => {
+      if (!mapRef.current || !destination) return;
+      const coordsToFit =
+        routeCoords.length > 0
+          ? routeCoords
+          : origin
+          ? [origin, destination]
+          : [destination];
+      if (coordsToFit.length > 1) {
+        mapRef.current.fitToCoordinates(coordsToFit, {
+          animated,
+          edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+        });
+      } else {
+        mapRef.current.animateToRegion(
+          {
+            latitude: coordsToFit[0].latitude,
+            longitude: coordsToFit[0].longitude,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          },
+          animated ? 500 : 0
+        );
+      }
+    },
+    [origin, destination, routeCoords]
+  );
+
   useEffect(() => {
-    if (origin && mapRef.current) {
-      mapRef.current.animateCamera(
-        {
-          center: origin,
-          pitch: 0,
-          heading: 0,
-        },
-        { duration: 500 }
-      );
+    if (!origin || !destination) {
+      setRouteCoords([]);
+      return;
     }
-  }, [origin]);
+    let isCancelled = false;
+    const fetchRoute = async () => {
+      setRouteLoading(true);
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const json = await res.json();
+        const coords = json?.routes?.[0]?.geometry?.coordinates;
+        if (!isCancelled && Array.isArray(coords)) {
+          setRouteCoords(
+            coords.map(([lon, lat]: [number, number]) => ({
+              latitude: lat,
+              longitude: lon,
+            }))
+          );
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.warn('Route fetch failed', error);
+          setRouteCoords([]);
+        }
+      } finally {
+        if (!isCancelled) setRouteLoading(false);
+      }
+    };
+    fetchRoute();
+    return () => {
+      isCancelled = true;
+    };
+  }, [origin, destination]);
+
+  useEffect(() => {
+    focusOnRoute(false);
+  }, [focusOnRoute]);
 
   const handleNavigatePress = () => {
-    if (!destination) return;
-    const dest = `${destination.latitude},${destination.longitude}`;
-    const originPart = origin ? `${origin.latitude},${origin.longitude}` : '';
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-      dest
-    )}${originPart ? `&origin=${encodeURIComponent(originPart)}` : ''}&travelmode=driving`;
-    Linking.openURL(url);
+    if (onNavigatePress) {
+      onNavigatePress();
+      return;
+    }
+    focusOnRoute();
   };
 
   if (!destination) {
@@ -54,7 +116,7 @@ export default function StoreRouteMap({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, containerStyle]}>
       {region ? (
         <MapView ref={mapRef} style={styles.map} initialRegion={region}>
           {origin && (
@@ -65,6 +127,15 @@ export default function StoreRouteMap({
             </Marker>
           )}
           <Marker coordinate={destination} title="Store" pinColor="#be3e3e" />
+          {origin && destination && (
+            <Polyline
+              coordinates={
+                routeCoords.length > 1 ? routeCoords : [origin, destination]
+              }
+              strokeColor="#d93a3a"
+              strokeWidth={4}
+            />
+          )}
         </MapView>
       ) : (
         <View style={[styles.map, styles.center]}>
@@ -81,7 +152,7 @@ export default function StoreRouteMap({
         disabled={!destination}
       >
         <Icon name="navigate-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
-        <Text style={styles.navigateText}>Navigate</Text>
+        <Text style={styles.navigateText}>{navigateLabel}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -89,8 +160,9 @@ export default function StoreRouteMap({
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
-    height: 250,
+    width: 360,
+    height: 220,
+    alignSelf: 'center',
     borderRadius: 12,
     overflow: 'hidden',
     marginTop: 10,

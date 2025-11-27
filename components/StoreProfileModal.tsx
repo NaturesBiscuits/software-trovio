@@ -19,7 +19,7 @@ import { supabase } from '../lib/supabase';
 import { getCachedImageUrls } from '../lib/imageCache';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { StoreApplication } from './DiscoverFlipCard';
+import type { StoreApplication, StorePromotion } from './DiscoverFlipCard';
 import StoreRouteMap from './StoreRouteMap';
 
 const { width: deviceWidth } = Dimensions.get('window');
@@ -79,6 +79,8 @@ export default function StoreProfileModal({
   const flatListRef = useRef<FlatList<string>>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [isStoreOwner, setIsStoreOwner] = useState(false);
+  const [promotions, setPromotions] = useState<StorePromotion[]>([]);
+  const [loadingPromotions, setLoadingPromotions] = useState(false);
   const lastLoggedViewRef = useRef<{ storeId: string | null; visibleAt: number }>({
     storeId: null,
     visibleAt: 0,
@@ -247,6 +249,54 @@ export default function StoreProfileModal({
     };
     loadPhotos();
   }, [store?.photos_url, store?.user_id, visible, store]);
+
+  // Load promotions for the current store
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchPromotions = async () => {
+      if (!store?.id || !visible) {
+        if (isMounted) {
+          setPromotions([]);
+        }
+        return;
+      }
+
+      setLoadingPromotions(true);
+      try {
+        const { data, error } = await supabase
+          .from<StorePromotion>('promotions')
+          .select('*')
+          .eq('store_id', store.id)
+          .eq('is_active', true)
+          .gt('expires_at', new Date().toISOString())
+          .order('expires_at', { ascending: true });
+
+        if (!isMounted) return;
+
+        if (error || !data) {
+          setPromotions([]);
+        } else {
+          setPromotions(data);
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.error('Error fetching promotions for store profile:', err);
+          setPromotions([]);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingPromotions(false);
+        }
+      }
+    };
+
+    fetchPromotions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [store?.id, visible]);
 
   // Only show upload if user is the store owner
   useEffect(() => {
@@ -453,31 +503,29 @@ export default function StoreProfileModal({
 
         {/* Unified Info Card for Description, Address, Tags, and Map */}
         <View style={styles.infoCard}>
-          {/* Heart button on the right side of the description container with "saved" message */}
-          {store.description ? (
-            <>
-              <View style={styles.descriptionRow}>
-                <Text style={styles.sectionTitle}>Description</Text>
-                <View style={{ flex: 1 }} />
-                <TouchableOpacity
-                  style={styles.heartButton}
-                  onPress={handleHeartPress}
-                  activeOpacity={0.7}
-                  testID="description-heart"
-                >
-                  <Icon
-                    name={isLiked ? 'heart' : 'heart-outline'}
-                    size={24}
-                    color={isLiked ? 'red' : '#aaa'}
-                  />
-                </TouchableOpacity>
-                {isLiked && showSaved && (
-                  <Text style={styles.savedMessage}>Saved</Text>
-                )}
-              </View>
-              <Text style={styles.descriptionText}>{store.description}</Text>
-            </>
-          ) : null}
+          {/* Heart button + description */}
+          <View style={styles.descriptionRow}>
+            <Text style={styles.sectionTitle}>Description</Text>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity
+              style={styles.heartButton}
+              onPress={handleHeartPress}
+              activeOpacity={0.7}
+              testID="description-heart"
+            >
+              <Icon
+                name={isLiked ? 'heart' : 'heart-outline'}
+                size={24}
+                color={isLiked ? 'red' : '#aaa'}
+              />
+            </TouchableOpacity>
+            {isLiked && showSaved && (
+              <Text style={styles.savedMessage}>Saved</Text>
+            )}
+          </View>
+          <Text style={styles.descriptionText}>
+            {store.description || 'This store has not added a description yet.'}
+          </Text>
 
           {store.address ? (
             <>
@@ -513,11 +561,34 @@ export default function StoreProfileModal({
 
         {/* Current Promotions Container */}
         <View style={styles.promotionsCard}>
-          <Text style={styles.promotionsTitle}>Current Promotions</Text>
-          {/* You may add dynamic promotions data display here in the future */}
-          <Text style={styles.promotionsText}>
-            No promotions currently available.
-          </Text>
+          <View style={styles.promotionsHeader}>
+            <Text style={styles.promotionsTitle}>Current Promotions</Text>
+            {loadingPromotions && <ActivityIndicator size="small" color="#4f63d2" />}
+          </View>
+
+          {!loadingPromotions && promotions.length === 0 ? (
+            <Text style={styles.promotionsText}>
+              No promotions currently available.
+            </Text>
+          ) : (
+            promotions.map((promo) => (
+              <View key={promo.id} style={styles.promotionCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.promotionTitle}>{promo.title}</Text>
+                  <Text style={styles.promotionBody}>{promo.description}</Text>
+                  <Text style={styles.promotionExpires}>
+                    Expires {new Date(promo.expires_at).toLocaleDateString()}
+                  </Text>
+                </View>
+                {promo.image_url ? (
+                  <Image
+                    source={{ uri: promo.image_url }}
+                    style={styles.promotionImage}
+                  />
+                ) : null}
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </Modal>
@@ -736,9 +807,44 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 8,
   },
+  promotionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
   promotionsText: {
     color: '#444',
     fontSize: 15,
     marginBottom: 6,
+  },
+  promotionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9ff',
+    marginBottom: 10,
+  },
+  promotionTitle: {
+    fontWeight: '700',
+    fontSize: 16,
+    marginBottom: 4,
+    color: '#1f2251',
+  },
+  promotionBody: {
+    color: '#333',
+    marginBottom: 4,
+  },
+  promotionExpires: {
+    fontSize: 12,
+    color: '#666',
+  },
+  promotionImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    marginLeft: 12,
   },
 });

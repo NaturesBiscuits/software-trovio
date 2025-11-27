@@ -17,14 +17,32 @@ export default function LoginScreen({ navigation }: any) {
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
 
   async function signInWithEmail() {
-    setLoading(true)
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password,
-    })
-    // If login succeeds, data.session will be non-null and layout will react via auth listener
-    if (error) Alert.alert(error.message)
-    setLoading(false)
+    if (!email.trim() || !password) {
+      Alert.alert('Missing information', 'Please enter both email and password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        Alert.alert('Login failed', error.message);
+        return;
+      }
+
+      if (data?.session) {
+        router.replace('/(tabs)/discover');
+      }
+    } catch (err) {
+      console.error('Unexpected login error:', err);
+      Alert.alert('Login error', 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }
 
 const {t} = useTranslation();
@@ -95,7 +113,7 @@ const { changeLanguage, currentLanguage } = useLanguage();
         {t('Forgot Password')}
       </Text>
 
-      <TouchableOpacity style={s.button} onPress={() => { if (!loading) { signInWithEmail() } }}>
+      <TouchableOpacity style={[s.button, loading && { opacity: 0.6 }]} disabled={loading} onPress={signInWithEmail}>
         <Text style={s.buttonText}>{t('Login')}</Text>
       </TouchableOpacity>
 

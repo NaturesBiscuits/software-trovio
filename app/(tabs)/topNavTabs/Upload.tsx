@@ -1,9 +1,10 @@
 import MapPicker from "@/components/MapPicker";
 import TagSelector, { TagItem } from "@/components/TagSelector";
 import { supabase } from "@/lib/supabase";
+import { uploadCompressedImage, deleteTempFile, clearImageCache } from "@/lib/imageUtils";
 import { Buffer } from 'buffer';
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -321,11 +322,25 @@ export default function UploadFilesScreen() {
         for (let i = 0; i < idFiles.length; i++) {
           const asset = idFiles[i];
           const ext = getExtension(asset.name || '');
-          const path = await uploadToStorage(
-            asset.uri,
-            `applications/${userPrefix}/id_docs/${Date.now()}_id_${i}${ext || '.jpg'}`
-          );
-          governmentIdUrls.push(path);
+          const isImage = asset.mimeType?.startsWith('image/');
+          
+          if (isImage) {
+            // Use compressed upload for images
+            const path = await uploadCompressedImage(
+              asset.uri,
+              `applications/${userPrefix}/id_docs/${Date.now()}_id_${i}.jpg`,
+              'tus',
+              { compress: 0.5, maxWidth: 1024 }
+            );
+            governmentIdUrls.push(path);
+          } else {
+            // Use regular upload for PDFs
+            const path = await uploadToStorage(
+              asset.uri,
+              `applications/${userPrefix}/id_docs/${Date.now()}_id_${i}${ext || '.pdf'}`
+            );
+            governmentIdUrls.push(path);
+          }
         }
       }
 
@@ -333,20 +348,42 @@ export default function UploadFilesScreen() {
         for (let i = 0; i < licenseFiles.length; i++) {
           const asset = licenseFiles[i];
           const ext = getExtension(asset.name || '');
-          const path = await uploadToStorage(
-            asset.uri,
-            `applications/${userPrefix}/license_docs/${Date.now()}_license_${i}${ext || '.jpg'}`
-          );
-          licenseDocsUrls.push(path);
+          const isImage = asset.mimeType?.startsWith('image/');
+          
+          if (isImage) {
+            // Use compressed upload for images
+            const path = await uploadCompressedImage(
+              asset.uri,
+              `applications/${userPrefix}/license_docs/${Date.now()}_license_${i}.jpg`,
+              'tus',
+              { compress: 0.5, maxWidth: 1024 }
+            );
+            licenseDocsUrls.push(path);
+          } else {
+            // Use regular upload for PDFs
+            const path = await uploadToStorage(
+              asset.uri,
+              `applications/${userPrefix}/license_docs/${Date.now()}_license_${i}${ext || '.pdf'}`
+            );
+            licenseDocsUrls.push(path);
+          }
         }
       }
 
       for (let i = 0; i < collageFiles.length; i++) {
         const asset = collageFiles[i];
-        const ext = getExtension(asset.name || '');
-        const path = await uploadToStorage(asset.uri, `applications/${userPrefix}/store_photos/${Date.now()}_photo_${i}${ext || '.jpg'}`);
+        // Use compressed upload for store photos (70-90% smaller)
+        const path = await uploadCompressedImage(
+          asset.uri,
+          `applications/${userPrefix}/store_photos/${Date.now()}_photo_${i}.jpg`,
+          'tus',
+          { compress: 0.5, maxWidth: 1024 } // Resize to max 1024px width, 50% compression
+        );
         storePhotosPaths.push(path);
       }
+      
+      // Clear image cache after uploading multiple images
+      await clearImageCache();
 
       const addressParts = [streetName, city, region, postalCode, landmarks].filter(Boolean);
       const address = addressParts.join(', ');
@@ -370,6 +407,14 @@ export default function UploadFilesScreen() {
         ]);
 
       if (insertError) throw insertError;
+      
+      // Clean up temp files after successful submission
+      for (const file of [...idFiles, ...licenseFiles, ...collageFiles]) {
+        if (file.uri) {
+          await deleteTempFile(file.uri);
+        }
+      }
+      
       alert('Application submitted successfully.');
       router.push('/(tabs)/topNavTabs/profile');
     } catch (e: any) {

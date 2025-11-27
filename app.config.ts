@@ -34,6 +34,13 @@ const expoConfig: ExpoConfig = {
     tsconfigPaths: true,
   },
 
+  ios: {
+    infoPlist: {
+      "ITSAppUsesNonExemptEncryption": false
+    },
+    bundleIdentifier: "com.trovio.app"
+  },
+
   android: {
     package: "com.trovio.app",
     intentFilters: [
@@ -51,7 +58,8 @@ const expoConfig: ExpoConfig = {
     SUPABASE_URL: process.env.SUPABASE_URL ?? '',
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY ?? '',
     eas: {
-      projectId: process.env.EAS_PROJECT_ID ?? undefined,
+      // Ensure EAS project ID is always set for dynamic config
+      projectId: process.env.EAS_PROJECT_ID ?? 'd7dfc260-847d-486a-93ec-6565f242c8d7',
     },
   },
 };

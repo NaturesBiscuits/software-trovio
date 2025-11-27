@@ -7,11 +7,14 @@ import { supabase } from './supabase';
  * 2. Download and convert to base64
  * 
  * This function tries signed URL first, then falls back to download
+ * 
+ * @param cacheBust - If true, adds a timestamp query parameter to prevent caching
  */
 export async function getStorageImageUrl(
   filename: string | null,
   userId: string | null,
-  bucket: string = 'tus'
+  bucket: string = 'tus',
+  cacheBust: boolean = false
 ): Promise<string | null> {
   if (!filename || !userId) return null;
 
@@ -27,7 +30,8 @@ export async function getStorageImageUrl(
       .createSignedUrl(storagePath, 3600); // 1 hour expiry
 
     if (!signedError && signedData?.signedUrl) {
-      return signedData.signedUrl;
+      // Add cache busting if requested
+      return cacheBust ? `${signedData.signedUrl}?t=${Date.now()}` : signedData.signedUrl;
     }
 
     // Fallback: Download and convert to base64
@@ -60,14 +64,16 @@ export async function getStorageImageUrl(
 
 /**
  * Get multiple image URLs (for batch processing)
+ * @param cacheBust - If true, adds a timestamp query parameter to prevent caching
  */
 export async function getStorageImageUrls(
   filenames: (string | null)[],
   userId: string | null,
-  bucket: string = 'tus'
+  bucket: string = 'tus',
+  cacheBust: boolean = false
 ): Promise<(string | null)[]> {
   const promises = filenames.map((filename) =>
-    getStorageImageUrl(filename, userId, bucket)
+    getStorageImageUrl(filename, userId, bucket, cacheBust)
   );
   return Promise.all(promises);
 }

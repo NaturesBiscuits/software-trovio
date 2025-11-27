@@ -1,25 +1,26 @@
+import { Image as ExpoImage } from "expo-image";
+import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Image,
-  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
-  Dimensions,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
-import { supabase } from "../../lib/supabase";
-import { getStorageImageUrls } from "../../lib/storageUtils";
+import CreatePromotionModal from "../../components/CreatePromotionModal";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
 import StoreRouteMap from "../../components/StoreRouteMap";
-import { useRouter } from "expo-router";
+import VerticalStoreCard from "../../components/VerticalStoreCard";
+import { getCachedImageUrls } from "../../lib/imageCache";
+import { supabase } from "../../lib/supabase";
 
 const { width: deviceWidth, height: deviceHeight } = Dimensions.get("window");
 const PLACEHOLDER_WIDTH = Math.min(350, deviceWidth - 40);
@@ -30,21 +31,27 @@ const SCROLL_TOP_LIMIT = 0;
 
 type Promotion = {
   id: string;
+  store_id: string;
+  user_id: string;
   title: string;
-  details: string;
+  description: string;
+  image_url: string | null;
+  expires_at: string;
+  is_active: boolean;
+  created_at: string;
 };
 
 export default function MyStoreScreen() {
-  const [store, setStore] = useState<StoreApplication | null>(null);
+  const [stores, setStores] = useState<StoreApplication[]>([]);
+  const [selectedStore, setSelectedStore] = useState<StoreApplication | null>(null);
   const [loadingStore, setLoadingStore] = useState(true);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [carouselIndex, setCarouselIndex] = useState(0);
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [loadingPromotions, setLoadingPromotions] = useState(false);
   const [promoModalVisible, setPromoModalVisible] = useState(false);
-  const [promoTitle, setPromoTitle] = useState("");
-  const [promoDetails, setPromoDetails] = useState("");
 
   const flatListRef = useRef<FlatList<string>>(null);
   const onViewRef = useRef(({ viewableItems }: { viewableItems: any[] }) => {
@@ -70,13 +77,13 @@ export default function MyStoreScreen() {
   };
 
   useEffect(() => {
-    const fetchMyStore = async () => {
+    const fetchMyStores = async () => {
       setLoadingStore(true);
       try {
         const { data: userData, error: userError } = await supabase.auth.getUser();
         const userId = userData?.user?.id;
         if (userError || !userId) {
-          setStore(null);
+          setStores([]);
           return;
         }
 
@@ -85,33 +92,32 @@ export default function MyStoreScreen() {
           .select("*")
           .eq("user_id", userId)
           .eq("status", "accepted")
-          .order("created_at", { ascending: false })
-          .limit(1);
+          .order("created_at", { ascending: false });
 
         if (error || !data || data.length === 0) {
-          setStore(null);
+          setStores([]);
           return;
         }
 
-        setStore(data[0] as StoreApplication);
+        setStores(data as StoreApplication[]);
       } finally {
         setLoadingStore(false);
       }
     };
 
-    fetchMyStore();
+    fetchMyStores();
   }, []);
 
   useEffect(() => {
     const loadPhotos = async () => {
-      if (!store || !Array.isArray(store.photos_url) || !store.photos_url.length || !store.user_id) {
+      if (!selectedStore || !Array.isArray(selectedStore.photos_url) || !selectedStore.photos_url.length || !selectedStore.user_id) {
         setPhotoUrls([]);
         setCarouselIndex(0);
         return;
       }
       setLoadingPhotos(true);
       try {
-        const urls = await getStorageImageUrls(store.photos_url, store.user_id);
+        const urls = await getCachedImageUrls(selectedStore.photos_url, selectedStore.user_id);
         setPhotoUrls(urls.filter((url): url is string => Boolean(url)));
       } catch {
         setPhotoUrls([]);
@@ -121,24 +127,85 @@ export default function MyStoreScreen() {
       }
     };
 
-    if (store) {
+    if (selectedStore) {
       loadPhotos();
     }
-  }, [store]);
+  }, [selectedStore]);
 
-  const handleCreatePromotion = () => {
-    if (!promoTitle.trim() || !promoDetails.trim()) {
-      return;
-    }
-    const newPromo: Promotion = {
-      id: Date.now().toString(),
-      title: promoTitle.trim(),
-      details: promoDetails.trim(),
+  // Fetch promotions from database
+  useEffect(() => {
+    const fetchPromotions = async () => {
+      if (!selectedStore) {
+        setPromotions([]);
+        return;
+      }
+
+      setLoadingPromotions(true);
+      try {
+        const { data, error } = await supabase
+          .from("promotions")
+          .select("*")
+          .eq("store_id", selectedStore.id)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        setPromotions((data as Promotion[]) || []);
+      } catch (error) {
+        console.error("Error fetching promotions:", error);
+      } finally {
+        setLoadingPromotions(false);
+      }
     };
-    setPromotions((prev) => [newPromo, ...prev]);
-    setPromoTitle("");
-    setPromoDetails("");
-    setPromoModalVisible(false);
+
+    fetchPromotions();
+  }, [selectedStore]);
+
+  // Check and update expired promotions periodically
+  useEffect(() => {
+    if (!selectedStore || promotions.length === 0) return;
+
+    const interval = setInterval(async () => {
+      const now = new Date();
+      const expired = promotions.filter(
+        (p) => new Date(p.expires_at) <= now && p.is_active
+      );
+
+      if (expired.length > 0) {
+        // Update expired promotions
+        const expiredIds = expired.map((p) => p.id);
+        const { error } = await supabase
+          .from("promotions")
+          .update({ is_active: false })
+          .in("id", expiredIds);
+
+        if (!error) {
+          // Refresh promotions list
+          const { data } = await supabase
+            .from("promotions")
+            .select("*")
+            .eq("store_id", selectedStore.id)
+            .order("created_at", { ascending: false });
+          if (data) setPromotions(data as Promotion[]);
+        }
+      }
+    }, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [selectedStore, promotions]);
+
+  const handlePromotionSuccess = async () => {
+    // Refresh promotions after creation
+    if (!selectedStore) return;
+    
+    const { data, error } = await supabase
+      .from("promotions")
+      .select("*")
+      .eq("store_id", selectedStore.id)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setPromotions(data as Promotion[]);
+    }
   };
 
   if (loadingStore) {
@@ -149,17 +216,48 @@ export default function MyStoreScreen() {
     );
   }
 
-  if (!store) {
+  // Show list of stores if no store is selected
+  if (!selectedStore) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>You don&apos;t have a store yet</Text>
-        <Text style={styles.emptySubtitle}>
-          Apply for a professional account to create your store profile and start adding promotions.
-        </Text>
+      <View style={styles.screenContainer}>
+        <View style={styles.pageHeaderContainer}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.replace("/(tabs)/discover")}
+            activeOpacity={0.8}
+            hitSlop={{ left: 8, right: 8, top: 8, bottom: 8 }}
+          >
+            <Icon name="arrow-back" size={25} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.pageTitleWithBack}>My Stores</Text>
+        </View>
+
+        {stores.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyTitle}>You don&apos;t have a store yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Apply for a professional account to create your store profile and start adding promotions.
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={stores}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <VerticalStoreCard
+                store={item}
+                onPress={() => setSelectedStore(item)}
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </View>
     );
   }
 
+  // Show store details when a store is selected
   return (
     <View style={styles.screenContainer}>
       <ScrollView
@@ -175,13 +273,13 @@ export default function MyStoreScreen() {
         <View style={styles.pageHeaderContainer}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.replace("/(tabs)/discover")}
+            onPress={() => setSelectedStore(null)}
             activeOpacity={0.8}
             hitSlop={{ left: 8, right: 8, top: 8, bottom: 8 }}
           >
             <Icon name="arrow-back" size={25} color="#000" />
           </TouchableOpacity>
-          <Text style={styles.pageTitleWithBack}>{store.store_name || "My Store"}</Text>
+          <Text style={styles.pageTitleWithBack}>{selectedStore.store_name || "My Store"}</Text>
         </View>
 
         {/* Carousel Area */}
@@ -246,25 +344,25 @@ export default function MyStoreScreen() {
 
         {/* Store Info Card: description, address, tags, location & route */}
         <View style={styles.infoCard}>
-          {store.description ? (
+          {selectedStore.description ? (
             <>
               <Text style={styles.sectionTitle}>Description</Text>
-              <Text style={styles.descriptionText}>{store.description}</Text>
+              <Text style={styles.descriptionText}>{selectedStore.description}</Text>
             </>
           ) : null}
 
-          {store.address ? (
+          {selectedStore.address ? (
             <>
               <Text style={styles.sectionTitle}>Address</Text>
-              <Text style={styles.descriptionText}>{store.address}</Text>
+              <Text style={styles.descriptionText}>{selectedStore.address}</Text>
             </>
           ) : null}
 
-          {Array.isArray(store.tags) && store.tags.length > 0 ? (
+          {Array.isArray(selectedStore.tags) && selectedStore.tags.length > 0 ? (
             <>
               <Text style={styles.sectionTitle}>Tags</Text>
               <View style={styles.tagsContainer}>
-                {store.tags.map((tag, idx) => (
+                {selectedStore.tags.map((tag, idx) => (
                   <View key={tag + idx} style={styles.tagPill}>
                     <Text style={styles.tagText}>{tag}</Text>
                   </View>
@@ -274,9 +372,9 @@ export default function MyStoreScreen() {
           ) : null}
 
           <Text style={styles.sectionTitle}>Location & Route</Text>
-          {typeof store.latitude === "number" && typeof store.longitude === "number" ? (
+          {typeof selectedStore.latitude === "number" && typeof selectedStore.longitude === "number" ? (
             <StoreRouteMap
-              destination={{ latitude: store.latitude, longitude: store.longitude }}
+              destination={{ latitude: selectedStore.latitude, longitude: selectedStore.longitude }}
             />
           ) : (
             <Text style={styles.emptyText}>Location unavailable.</Text>
@@ -296,68 +394,84 @@ export default function MyStoreScreen() {
             </TouchableOpacity>
           </View>
 
-          {promotions.length === 0 ? (
+          {loadingPromotions ? (
+            <ActivityIndicator size="small" color="#1f78ff" style={{ marginVertical: 20 }} />
+          ) : promotions.length === 0 ? (
             <Text style={styles.promotionsText}>
               No promotions currently available. Tap the + button to create one.
             </Text>
           ) : (
-            promotions.map((promo) => (
-              <View key={promo.id} style={styles.promotionItem}>
-                <Text style={styles.promoTitle}>{promo.title}</Text>
-                <Text style={styles.promoDetails}>{promo.details}</Text>
-              </View>
-            ))
+            promotions.map((promo) => {
+              const expiresAt = new Date(promo.expires_at);
+              const isExpired = expiresAt <= new Date();
+              const timeRemaining = expiresAt.getTime() - Date.now();
+              const hoursRemaining = Math.floor(timeRemaining / (1000 * 60 * 60));
+              const daysRemaining = Math.floor(hoursRemaining / 24);
+
+              return (
+                <View key={promo.id} style={styles.promotionItem}>
+                  {promo.image_url && (
+                    <ExpoImage
+                      source={{ uri: promo.image_url }}
+                      style={styles.promoImage}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                    />
+                  )}
+                  <View style={styles.promoContent}>
+                    <View style={styles.promoHeader}>
+                      <Text style={styles.promoTitle}>{promo.title}</Text>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          !promo.is_active || isExpired
+                            ? styles.statusInactive
+                            : styles.statusActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            !promo.is_active || isExpired
+                              ? styles.statusTextInactive
+                              : styles.statusTextActive,
+                          ]}
+                        >
+                          {!promo.is_active || isExpired ? "Expired" : "Active"}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.promoDetails}>{promo.description}</Text>
+                    <View style={styles.promoFooter}>
+                      <Icon name="time-outline" size={14} color="#666" />
+                      <Text style={styles.promoTime}>
+                        {isExpired
+                          ? "Expired"
+                          : daysRemaining > 0
+                          ? `${daysRemaining} day${daysRemaining > 1 ? "s" : ""} left`
+                          : hoursRemaining > 0
+                          ? `${hoursRemaining} hour${hoursRemaining > 1 ? "s" : ""} left`
+                          : "Expiring soon"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
           )}
         </View>
       </ScrollView>
 
       {/* Promotion Creation Modal */}
-      <Modal
-        visible={promoModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPromoModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Create Promotion</Text>
-            <TextInput
-              value={promoTitle}
-              onChangeText={setPromoTitle}
-              placeholder="Promotion title"
-              placeholderTextColor="#999"
-              style={styles.modalInput}
-            />
-            <TextInput
-              value={promoDetails}
-              onChangeText={setPromoDetails}
-              placeholder="Promotion details"
-              placeholderTextColor="#999"
-              style={[styles.modalInput, { height: 90, textAlignVertical: "top" }]}
-              multiline
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalCancelButton]}
-                onPress={() => {
-                  setPromoModalVisible(false);
-                  setPromoTitle("");
-                  setPromoDetails("");
-                }}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalSaveButton]}
-                onPress={handleCreatePromotion}
-              >
-                <Text style={styles.modalSaveText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {selectedStore && (
+        <CreatePromotionModal
+          visible={promoModalVisible}
+          onClose={() => setPromoModalVisible(false)}
+          storeId={selectedStore.id}
+          userId={selectedStore.user_id || ""}
+          onSuccess={handlePromotionSuccess}
+        />
+      )}
     </View>
   );
 }
@@ -370,6 +484,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    paddingBottom: 40,
+  },
+  listContent: {
+    paddingTop: 20,
     paddingBottom: 40,
   },
   // Lower down the header area by increasing marginTop
@@ -561,18 +679,74 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   promotionItem: {
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
+    marginBottom: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#f0f0f0",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  promoImage: {
+    width: "100%",
+    height: 180,
+    backgroundColor: "#f5f5f5",
+  },
+  promoContent: {
+    padding: 12,
+  },
+  promoHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
   },
   promoTitle: {
     fontSize: 16,
     fontWeight: "700",
-    marginBottom: 4,
+    flex: 1,
+    marginRight: 8,
+    color: "#333",
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusActive: {
+    backgroundColor: "#e8f5e9",
+  },
+  statusInactive: {
+    backgroundColor: "#ffebee",
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  statusTextActive: {
+    color: "#4caf50",
+  },
+  statusTextInactive: {
+    color: "#f44336",
   },
   promoDetails: {
     fontSize: 14,
     color: "#555",
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  promoFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  promoTime: {
+    fontSize: 12,
+    color: "#666",
+    marginLeft: 4,
   },
   modalOverlay: {
     flex: 1,

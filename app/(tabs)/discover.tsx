@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -114,6 +114,26 @@ const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClos
 
   if (!visible && slideAnim ===  new Animated.Value(panelWidth)) return null; // Simple render check
 
+  // Updated logout action with confirmation
+  const handleLogout = async () => {
+    Alert.alert(
+      "Log Out",
+      "Are you sure you want to log out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: async () => {
+            const { error } = await supabase.auth.signOut();
+            if (!error) router.replace('/(auth)/login');
+          }
+        }
+      ],
+      { cancelable: true }
+    );
+  };
+
   const menuItems = [
     { label: 'Profile', icon: 'person-circle-outline', action: () => router.push('/(tabs)/topNavTabs/profile') },
     // CHANGED: Directly go to the actual myStore file
@@ -121,11 +141,7 @@ const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClos
     { label: 'Saved Stores', icon: 'bookmark-outline', action: () => router.push('/(tabs)/savedstores') },
     { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/topNavTabs/professionalTools') },
     { label: 'Settings', icon: 'settings-outline', action: () => {} },
-    { label: 'Logout', icon: 'log-out-outline', action: async () => {
-        const { error } = await supabase.auth.signOut();
-        if (!error) router.replace('/(auth)/login');
-      } 
-    },
+    { label: 'Logout', icon: 'log-out-outline', action: handleLogout },
   ];
 
   return (
@@ -169,6 +185,12 @@ export default function HomeScreen() {
   // Custom Hooks
   const { userCoords, hasLocPerm } = useLocationTracker();
   const { stores, loading } = useStoreFeed();
+
+  // Filter out user's own stores
+  const filteredStores = useMemo(() => {
+    if (!userProfile?.id) return stores;
+    return stores.filter(store => store.user_id !== userProfile.id);
+  }, [stores, userProfile?.id]);
 
   // State
   const [flippedCardIndex, setFlippedCardIndex] = useState<number | null>(null);
@@ -303,10 +325,10 @@ export default function HomeScreen() {
         ) : (
           <>
             <Text style={styles.sectionHeader}>Discover</Text>
-            {stores.length > 0 ? (
+            {filteredStores.length > 0 ? (
               <FlatList
                 horizontal
-                data={stores}
+                data={filteredStores}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}
                 keyExtractor={(item) => item.id}
@@ -317,7 +339,7 @@ export default function HomeScreen() {
             )}
 
             <Text style={styles.sectionHeader}>For you</Text>
-            {stores.map((item) => renderForYouCard(item))}
+            {filteredStores.map((item) => renderForYouCard(item))}
           </>
         )}
       </ScrollView>

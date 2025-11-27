@@ -10,10 +10,10 @@ export default function TabsLayout() {
         <React.Fragment>
             <StatusBar style="auto" />
             <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="discover" />
                 <Stack.Screen name="notification" />
                 <Stack.Screen name="home" />
                 <Stack.Screen name="settings" />
-                <Stack.Screen name="discover" />
             </Stack>
             {!hideBottomNav && <BottomNav />}
         </React.Fragment>

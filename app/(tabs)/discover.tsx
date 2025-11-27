@@ -23,7 +23,7 @@ import { supabase } from '../../lib/supabase';
 
 // --- YOUR COMPONENTS ---
 import BottomNav from '../../components/BottomNav';
-import DiscoverFlipCard, { StoreApplication } from '../../components/DiscoverFlipCard';
+import DiscoverFlipCard, { StoreApplication, StorePromotion } from '../../components/DiscoverFlipCard';
 import StoreProfileModal from '../../components/StoreProfileModal';
 import TopNav from '../../components/TopNav';
 import VerticalStoreCard from '../../components/VerticalStoreCard';
@@ -71,14 +71,49 @@ const useStoreFeed = () => {
   useEffect(() => {
     const fetchStores = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('store_applications')
-        .select('*')
-        .eq('status', 'accepted')
-        .order('created_at', { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from('store_applications')
+          .select('*')
+          .eq('status', 'accepted')
+          .order('created_at', { ascending: false });
 
-      if (!error && data) setStores(data as StoreApplication[]);
-      setLoading(false);
+        if (error || !data) {
+          setStores([]);
+          return;
+        }
+
+        let fetchedStores = data as StoreApplication[];
+        const storeIds = fetchedStores.map((store) => store.id).filter(Boolean);
+
+        if (storeIds.length > 0) {
+          const { data: promotionsData, error: promotionsError } = await supabase
+            .from('promotions')
+            .select('*')
+            .in('store_id', storeIds)
+            .eq('is_active', true)
+            .gt('expires_at', new Date().toISOString())
+            .order('expires_at', { ascending: true });
+
+          if (!promotionsError && promotionsData) {
+            const promotionByStore = new Map<string, StorePromotion>();
+            (promotionsData as StorePromotion[]).forEach((promo) => {
+              if (!promotionByStore.has(promo.store_id)) {
+                promotionByStore.set(promo.store_id, promo);
+              }
+            });
+
+            fetchedStores = fetchedStores.map((store) => ({
+              ...store,
+              activePromotion: promotionByStore.get(store.id) || null,
+            }));
+          }
+        }
+
+        setStores(fetchedStores);
+      } finally {
+        setLoading(false);
+      }
     };
     fetchStores();
   }, []);

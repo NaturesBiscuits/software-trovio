@@ -12,7 +12,19 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { getCachedImageUrls } from '../lib/imageCache';
+import { getCachedImageUrl, getCachedImageUrls } from '../lib/imageCache';
+
+export type StorePromotion = {
+  id: string;
+  store_id: string;
+  user_id: string;
+  title: string;
+  description: string;
+  image_url: string | null;
+  expires_at: string;
+  is_active: boolean;
+  created_at: string;
+};
 
 export interface StoreApplication {
   id: string;
@@ -27,6 +39,7 @@ export interface StoreApplication {
   latitude: number | null;
   longitude: number | null;
   tags: string[] | null;
+  activePromotion?: StorePromotion | null;
 }
 
 interface DiscoverFlipCardProps {
@@ -73,6 +86,8 @@ export default React.memo(function DiscoverFlipCard({
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [imageLoading, setImageLoading] = useState(true);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [promoImageUrl, setPromoImageUrl] = useState<string | null>(null);
+  const [promoImageLoading, setPromoImageLoading] = useState(false);
 
   // Load image asynchronously with caching
   useEffect(() => {
@@ -107,6 +122,37 @@ export default React.memo(function DiscoverFlipCard({
 
     return () => clearInterval(interval);
   }, [imageUrls.length]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPromotionImage = async () => {
+      if (!item.activePromotion?.image_url || !item.user_id) {
+        if (isMounted) {
+          setPromoImageUrl(null);
+          setPromoImageLoading(false);
+        }
+        return;
+      }
+
+      setPromoImageLoading(true);
+      try {
+        const url = await getCachedImageUrl(item.activePromotion.image_url, item.user_id, 'tus');
+        if (isMounted) {
+          setPromoImageUrl(url);
+        }
+      } finally {
+        if (isMounted) {
+          setPromoImageLoading(false);
+        }
+      }
+    };
+
+    loadPromotionImage();
+    return () => {
+      isMounted = false;
+    };
+  }, [item.activePromotion?.image_url, item.user_id]);
 
   const { distanceStr, pathLink, locationStatus } = useMemo(() => {
     let status: 'has' | 'no-permission' | 'no-store-location' = 'has';
@@ -163,9 +209,118 @@ export default React.memo(function DiscoverFlipCard({
     zIndex: isFlipped ? 1 : 0,
   };
 
+  const promotionDurationLabel = useMemo(() => {
+    const expires = item.activePromotion?.expires_at ? new Date(item.activePromotion.expires_at) : null;
+    if (!expires || Number.isNaN(expires.getTime())) return null;
+
+    const diffMs = expires.getTime() - Date.now();
+    if (diffMs <= 0) return 'Expired';
+
+    const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+    const hours = Math.floor((diffMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+    const minutes = Math.floor((diffMs % (60 * 60 * 1000)) / (60 * 1000));
+
+    if (days > 0) return `Ends in ${days}d ${hours}h`;
+    if (hours > 0) return `Ends in ${hours}h ${minutes}m`;
+    return `Ends in ${minutes}m`;
+  }, [item.activePromotion?.expires_at]);
+
+  const promotionValidUntil = useMemo(() => {
+    const expires = item.activePromotion?.expires_at ? new Date(item.activePromotion.expires_at) : null;
+    if (!expires || Number.isNaN(expires.getTime())) return null;
+
+    return `Valid until ${expires.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    })} • ${expires.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+  }, [item.activePromotion?.expires_at]);
+
+  const hasPromotion = Boolean(item.activePromotion);
+
   const handleNavigate = () => {
     if (pathLink) Linking.openURL(pathLink);
   };
+
+  const renderPromotionFront = () => (
+    <View style={styles.promotionCardContent}>
+      {promoImageUrl && !promoImageLoading ? (
+        <Image
+          source={{ uri: promoImageUrl }}
+          style={styles.promotionImage}
+          contentFit="cover"
+          transition={200}
+          cachePolicy="memory-disk"
+        />
+      ) : (
+        <View style={styles.promotionImageFallback}>
+          <Icon name="gift-outline" size={42} color="#fff" />
+          <Text style={styles.promotionFallbackText}>Promotion image</Text>
+        </View>
+      )}
+
+      <View style={styles.promotionOverlay}>
+        {promotionDurationLabel && (
+          <View style={styles.promotionDurationChip}>
+            <Icon name="time-outline" size={13} color="#fff" style={{ marginRight: 4 }} />
+            <Text style={styles.promotionDurationText}>{promotionDurationLabel}</Text>
+          </View>
+        )}
+        <Text style={styles.promotionTitle} numberOfLines={2}>
+          {item.activePromotion?.title}
+        </Text>
+        <Text style={styles.promotionDescription} numberOfLines={3}>
+          {item.activePromotion?.description}
+        </Text>
+        <View style={styles.promotionStoreRow}>
+          <Icon name="storefront-outline" size={14} color="#f4f4f4" style={{ marginRight: 6 }} />
+          <Text style={styles.promotionStoreName} numberOfLines={1}>
+            {item.store_name || 'Unnamed Store'}
+          </Text>
+        </View>
+        {promotionValidUntil && (
+          <Text style={styles.promotionSubtleDate}>{promotionValidUntil}</Text>
+        )}
+      </View>
+    </View>
+  );
+
+  const renderStoreFront = () => (
+    <>
+      {imageUrls.length > 0 && !imageLoading ? (
+        <Image
+          source={{ uri: imageUrls[currentPhotoIndex] }}
+          style={styles.discoverImage}
+          contentFit="cover"
+          transition={200}
+          cachePolicy="memory-disk"
+          placeholderContentFit="cover"
+        />
+      ) : (
+        <View style={styles.placeholderBox}>
+          <Text style={styles.placeholderIcon}>📷</Text>
+        </View>
+      )}
+      <View style={styles.cardOverlayWhiteNoRadiusFixed}>
+        <Text
+          style={styles.cardTitleWhiteFixed}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {item.store_name || 'Unnamed Store'}
+        </Text>
+        <View style={styles.cardRowWhiteFixed}>
+          <Icon name="location-outline" size={14} color="#be3e3e" />
+          <Text
+            style={styles.cardSubtitleWhiteFixed}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {item.address || 'No address'}
+          </Text>
+        </View>
+      </View>
+    </>
+  );
 
   return (
     <TouchableOpacity
@@ -177,40 +332,7 @@ export default React.memo(function DiscoverFlipCard({
       {/* FRONT FACE */}
       <Animated.View style={[styles.flipCardFace, frontAnimatedStyle]}>
         <View style={styles.discoverCardContent}>
-          {imageUrls.length > 0 && !imageLoading ? (
-            <Image
-              source={{ uri: imageUrls[currentPhotoIndex] }}
-              style={styles.discoverImage}
-              contentFit="cover"
-              transition={200}
-              cachePolicy="memory-disk" // Use disk cache for persistence
-              placeholderContentFit="cover"
-            />
-          ) : (
-            <View style={styles.placeholderBox}>
-              <Text style={styles.placeholderIcon}>📷</Text>
-            </View>
-          )}
-          {/* White fixed-size container for store name and location, no border radius */}
-          <View style={styles.cardOverlayWhiteNoRadiusFixed}>
-            <Text
-              style={styles.cardTitleWhiteFixed}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {item.store_name || 'Unnamed Store'}
-            </Text>
-            <View style={styles.cardRowWhiteFixed}>
-              <Icon name="location-outline" size={14} color="#be3e3e" />
-              <Text
-                style={styles.cardSubtitleWhiteFixed}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {item.address || 'No address'}
-              </Text>
-            </View>
-          </View>
+          {hasPromotion ? renderPromotionFront() : renderStoreFront()}
           {showFlipHint && (
             <View style={styles.flipHint}>
               <Icon name="sync" size={16} color="#FFF" style={{ marginRight: 4 }} />
@@ -281,6 +403,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#f5f4f4',
   },
+  promotionCardContent: {
+    flex: 1,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#0d0d0d',
+  },
   flipCardBack: {
     padding: 15,
     justifyContent: 'space-between',
@@ -297,6 +425,73 @@ const styles = StyleSheet.create({
   },
   placeholderIcon: {
     fontSize: 40,
+  },
+  promotionImage: {
+    width: '100%',
+    height: '100%',
+  },
+  promotionOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  promotionDurationChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  promotionDurationText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  promotionTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  promotionDescription: {
+    color: '#f5f5f5',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  promotionStoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  promotionStoreName: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 13,
+    flex: 1,
+  },
+  promotionSubtleDate: {
+    color: '#f0f0f0',
+    fontSize: 12,
+    opacity: 0.8,
+  },
+  promotionImageFallback: {
+    flex: 1,
+    backgroundColor: '#1f1f1f',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  promotionFallbackText: {
+    color: '#fff',
+    marginTop: 6,
+    fontSize: 13,
   },
 
   // White fixed-size container for store name/location (no border radius)

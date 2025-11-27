@@ -81,7 +81,8 @@ export async function getCachedImageUrl(
     await cleanExpiredCache();
   }
 
-  const storagePath = filename.includes('applications/')
+  const hasExplicitPath = filename.includes('/');
+  const storagePath = hasExplicitPath
     ? filename
     : `applications/${userId}/store_photos/${filename}`;
 

@@ -63,12 +63,14 @@ export default function UserTagPreferences({ userId }: { userId: string }) {
     const { error } = await supabase.from("user_tags").insert({
       user_id: userId,
       tag_id: tag.id,
-      weight: 1.0,
     });
 
-    if (!error) {
-      setUserTags([...userTags, { id: tag.id, name: tag.name }]);
+    if (error) {
+      console.warn("Unable to add tag preference", error);
+      return;
     }
+
+    setUserTags(prev => [...prev, { id: tag.id, name: tag.name }]);
   };
 
   const deleteTag = async (tag: TagItem) => {

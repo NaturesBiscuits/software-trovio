@@ -29,7 +29,7 @@ export default function TopNav({ forYouActive }: TopNavProps) {
 
   const tabs: Tab[] = [
     { key: "search", label: "Search", route: "/(tabs)/topNavTabs/search" },
-    { key: "forYou", label: "For You", route: "/(tabs)/topNavTabs/forYou" },
+    { key: "forYou", label: "For You", route: "/(tabs)/discover" },
     { key: "profile", label: "Profile", route: "/(tabs)/topNavTabs/profile" },
   ];
 

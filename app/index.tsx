@@ -21,7 +21,17 @@ export default function Index() {
 
     return () => {
       isMounted = false;
-      subscription.subscription.unsubscribe();
+      // Defensively handle subscription cleanup
+      try {
+        const subAny = subscription as any;
+        if (subAny?.subscription && typeof subAny.subscription.unsubscribe === 'function') {
+          subAny.subscription.unsubscribe();
+        } else if (typeof subAny?.unsubscribe === 'function') {
+          subAny.unsubscribe();
+        }
+      } catch (e) {
+        // Silently ignore errors during cleanup
+      }
     };
   }, []);
 

@@ -1,8 +1,179 @@
-import React from "react";
-import { Text, View, Image, StyleSheet } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  Text,
+  View,
+  Image,
+  StyleSheet,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+} from "react-native";
 import BottomNav from "../../components/BottomNav";
+import { supabase } from "../../lib/supabase";
+
+type PromotionNotification = {
+  id: string;
+  store_id: string;
+  store_name: string;
+  title: string;
+  description: string;
+  image_url: string | null;
+  created_at: string;
+};
 
 export default function NotificationScreen() {
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [notifications, setNotifications] = useState<PromotionNotification[]>([]);
+  const [savedStoreIds, setSavedStoreIds] = useState<string[]>([]);
+  const [storeNameMap, setStoreNameMap] = useState<Record<string, string>>({});
+
+  const fetchNotifications = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      if (userError || !userId) {
+        setNotifications([]);
+        setSavedStoreIds([]);
+        setStoreNameMap({});
+        return;
+      }
+
+      const { data: favorites, error: favoritesError } = await supabase
+        .from("user_favorite_stores")
+        .select("store_id")
+        .eq("user_id", userId);
+
+      if (favoritesError || !favorites || favorites.length === 0) {
+        setNotifications([]);
+        setSavedStoreIds([]);
+        setStoreNameMap({});
+        return;
+      }
+
+      const ids = favorites.map((fav) => fav.store_id);
+      setSavedStoreIds(ids);
+
+      const [{ data: promos, error: promosError }, { data: stores, error: storesError }] =
+        await Promise.all([
+          supabase
+            .from("promotions")
+            .select("*")
+            .in("store_id", ids)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("store_applications")
+            .select("id, store_name")
+            .in("id", ids),
+        ]);
+
+      if (promosError) {
+        console.error("Failed to load promotions", promosError);
+        setNotifications([]);
+        return;
+      }
+
+      if (storesError) {
+        console.error("Failed to load store info", storesError);
+      }
+
+      const names = (stores || []).reduce<Record<string, string>>((acc, store) => {
+        acc[store.id] = store.store_name || "Saved Store";
+        return acc;
+      }, {});
+      setStoreNameMap(names);
+
+      const formatted = (promos || []).map((promo) => ({
+        id: promo.id,
+        store_id: promo.store_id,
+        store_name: names[promo.store_id] || "Saved Store",
+        title: promo.title,
+        description: promo.description,
+        image_url: promo.image_url,
+        created_at: promo.created_at,
+      }));
+
+      setNotifications(formatted);
+    } catch (error) {
+      console.error("Failed to fetch notifications", error);
+      setNotifications([]);
+      setSavedStoreIds([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    if (savedStoreIds.length === 0) return;
+
+    const channel = supabase
+      .channel("promo-notifications")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "promotions" },
+        (payload) => {
+          const newPromo = payload.new as PromotionNotification;
+          if (!savedStoreIds.includes(newPromo.store_id)) return;
+
+          setNotifications((prev) => [
+            {
+              id: newPromo.id,
+              store_id: newPromo.store_id,
+              store_name: storeNameMap[newPromo.store_id] || "Saved Store",
+              title: newPromo.title,
+              description: newPromo.description,
+              image_url: newPromo.image_url,
+              created_at: newPromo.created_at,
+            },
+            ...prev,
+          ]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [savedStoreIds, storeNameMap]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchNotifications().finally(() => setRefreshing(false));
+  }, [fetchNotifications]);
+
+  const renderNotification = useCallback(({ item }: { item: PromotionNotification }) => {
+    let createdDate = "";
+    try {
+      createdDate = new Date(item.created_at).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      createdDate = "";
+    }
+
+    return (
+      <View style={styles.notificationCard}>
+        <View style={styles.notificationInfo}>
+          <Text style={styles.notificationTitle}>{item.title}</Text>
+          <Text style={styles.notificationStore}>{item.store_name}</Text>
+          <Text style={styles.notificationDescription}>{item.description}</Text>
+          <Text style={styles.notificationDate}>{createdDate}</Text>
+        </View>
+        {item.image_url ? (
+          <Image source={{ uri: item.image_url }} style={styles.notificationImage} />
+        ) : null}
+      </View>
+    );
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
       
@@ -16,8 +187,28 @@ export default function NotificationScreen() {
       </View>
 
       {/* ===== BODY ===== */}
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <Text>No notifications yet</Text>
+      <View style={{ flex: 1, paddingHorizontal: 20 }}>
+        {loading ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="small" color="#1f78ff" />
+            <Text style={styles.loaderText}>Fetching notifications...</Text>
+          </View>
+        ) : notifications.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>You&apos;re all caught up!</Text>
+            <Text style={styles.emptyDescription}>
+              Save stores you care about and you&apos;ll be notified when they launch a promotion.
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={notifications}
+            keyExtractor={(item) => item.id}
+            renderItem={renderNotification}
+            contentContainerStyle={{ paddingBottom: 24, gap: 14 }}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          />
+        )}
       </View>
 
       <BottomNav visible />
@@ -47,5 +238,67 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     marginTop: 10,
+  },
+  loaderContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loaderText: {
+    marginTop: 12,
+    color: "#666",
+  },
+  emptyState: {
+    marginTop: 32,
+    paddingHorizontal: 10,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1d1c23",
+    marginBottom: 8,
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: "#6b6b6b",
+  },
+  notificationCard: {
+    flexDirection: "row",
+    backgroundColor: "#f9fafc",
+    borderRadius: 18,
+    padding: 16,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: "#ebedf3",
+  },
+  notificationInfo: {
+    flex: 1,
+  },
+  notificationTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111",
+    marginBottom: 2,
+  },
+  notificationStore: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#3a82ff",
+    marginBottom: 6,
+  },
+  notificationDescription: {
+    fontSize: 13,
+    color: "#555",
+    marginBottom: 8,
+  },
+  notificationDate: {
+    fontSize: 12,
+    color: "#9a9a9c",
+  },
+  notificationImage: {
+    width: 70,
+    height: 70,
+    borderRadius: 12,
+    backgroundColor: "#d9d9d9",
   },
 });

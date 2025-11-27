@@ -220,16 +220,16 @@ export default function MyStoreScreen() {
   if (!selectedStore) {
     return (
       <View style={styles.screenContainer}>
-        <View style={styles.pageHeaderContainer}>
+        <View style={styles.pageHeaderContainerAdjusted}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={styles.backButtonAdjusted}
             onPress={() => router.replace("/(tabs)/discover")}
             activeOpacity={0.8}
             hitSlop={{ left: 8, right: 8, top: 8, bottom: 8 }}
           >
             <Icon name="arrow-back" size={25} color="#000" />
           </TouchableOpacity>
-          <Text style={styles.pageTitleWithBack}>My Stores</Text>
+          <Text style={styles.pageTitleWithBackAdjusted}>My Stores</Text>
         </View>
 
         {stores.length === 0 ? (
@@ -270,16 +270,16 @@ export default function MyStoreScreen() {
         // disables extremely excessive scroll up/overscroll, while allowing a refresh/pull-down bounce
       >
         {/* Page title with back button */}
-        <View style={styles.pageHeaderContainer}>
+        <View style={styles.pageHeaderContainerAdjusted}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={styles.backButtonAdjusted}
             onPress={() => setSelectedStore(null)}
             activeOpacity={0.8}
             hitSlop={{ left: 8, right: 8, top: 8, bottom: 8 }}
           >
             <Icon name="arrow-back" size={25} color="#000" />
           </TouchableOpacity>
-          <Text style={styles.pageTitleWithBack}>{selectedStore.store_name || "My Store"}</Text>
+          <Text style={styles.pageTitleWithBackAdjusted}>{selectedStore.store_name || "My Store"}</Text>
         </View>
 
         {/* Carousel Area */}
@@ -490,12 +490,35 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 40,
   },
-  // Lower down the header area by increasing marginTop
+  // Lower down and shift right the header area (marginTop & marginLeft increased)
+  pageHeaderContainerAdjusted: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 18,
+    marginTop: 48,      // Lowered further from previous 36
+    marginLeft: 14,     // Moved a bit to the right
+  },
+  backButtonAdjusted: {
+    marginRight: 10,
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    borderRadius: 20,
+    // Add slight left margin so it's not flush to the edge (acts jointly with container marginLeft)
+    marginLeft: 0,
+  },
+  pageTitleWithBackAdjusted: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#000",
+    flexShrink: 1,
+    marginLeft: 4, // Space between icon and text after shifting
+  },
+  // (Keep old ones for potential other uses)
   pageHeaderContainer: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 18,
-    marginTop: 36, // Lowered even more from previous 18
+    marginTop: 36,
   },
   backButton: {
     marginRight: 10,
@@ -801,4 +824,3 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
-

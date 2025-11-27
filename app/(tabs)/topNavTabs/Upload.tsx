@@ -1,7 +1,7 @@
 import MapPicker from "@/components/MapPicker";
 import TagSelector, { TagItem } from "@/components/TagSelector";
+import { clearImageCache, deleteTempFile, uploadCompressedImage } from "@/lib/imageUtils";
 import { supabase } from "@/lib/supabase";
-import { uploadCompressedImage, deleteTempFile, clearImageCache } from "@/lib/imageUtils";
 import { Buffer } from 'buffer';
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from 'expo-file-system/legacy';
@@ -61,6 +61,7 @@ export default function UploadFilesScreen() {
 
     if (result.assets && result.assets[0]) {
       setFile(result.assets[0]);
+      setLicenseFiles(result.assets);
       setCompleted(false);
       setProgress(new Animated.Value(0));
     }
@@ -610,7 +611,12 @@ export default function UploadFilesScreen() {
             </View>
 
             {!completed && (
-              <TouchableOpacity onPress={() => setFile(null)}>
+              <TouchableOpacity
+                onPress={() => {
+                  setFile(null);
+                  setLicenseFiles([]);
+                }}
+              >
                 <Icon name="close" size={20} color="#777" />
               </TouchableOpacity>
             )}
@@ -627,7 +633,12 @@ export default function UploadFilesScreen() {
           {completed && (
             <View style={styles.completedRow}>
               <Text style={styles.completedText}>✅ Completed</Text>
-              <TouchableOpacity onPress={() => setFile(null)}>
+              <TouchableOpacity
+                onPress={() => {
+                  setFile(null);
+                  setLicenseFiles([]);
+                }}
+              >
                 <Icon name="trash-outline" size={20} color="#333" />
               </TouchableOpacity>
             </View>

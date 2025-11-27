@@ -79,6 +79,10 @@ export default function StoreProfileModal({
   const flatListRef = useRef<FlatList<string>>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [isStoreOwner, setIsStoreOwner] = useState(false);
+  const lastLoggedViewRef = useRef<{ storeId: string | null; visibleAt: number }>({
+    storeId: null,
+    visibleAt: 0,
+  });
 
   // Per-store heart state and for showing saved message
   const [isLiked, setIsLiked] = useState(false);
@@ -95,6 +99,53 @@ export default function StoreProfileModal({
     }
     return () => { ignore = true; };
   }, [store?.id, visible]);
+
+  // Record a store profile view whenever a signed-in, non-owner user opens the modal
+  useEffect(() => {
+    if (!visible || !store?.id || !store.user_id) {
+      return;
+    }
+
+    const now = Date.now();
+    if (
+      lastLoggedViewRef.current.storeId === store.id &&
+      now - lastLoggedViewRef.current.visibleAt < 2000
+    ) {
+      // Debounce duplicate log attempts happening in quick succession for the same store
+      return;
+    }
+    lastLoggedViewRef.current = { storeId: store.id, visibleAt: now };
+
+    const logProfileView = async () => {
+      try {
+        const { data: userData, error: authError } = await supabase.auth.getUser();
+        const viewerId = userData?.user?.id;
+
+        if (authError || !viewerId || viewerId === store.user_id) {
+          return;
+        }
+
+        const { data: favoriteRow } = await supabase
+          .from('user_favorite_stores')
+          .select('store_id')
+          .eq('user_id', viewerId)
+          .eq('store_id', store.id)
+          .limit(1)
+          .maybeSingle();
+
+        await supabase.from('store_profile_views').insert({
+          store_id: store.id,
+          store_owner_id: store.user_id,
+          viewed_by: viewerId,
+          is_follower: Boolean(favoriteRow),
+        });
+      } catch (logError) {
+        console.error('Error logging store profile view:', logError);
+      }
+    };
+
+    logProfileView();
+  }, [visible, store?.id, store?.user_id]);
 
   // Handle heart-press, persist to AsyncStorage
   const handleHeartPress = async () => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -6,32 +6,167 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Modal,
+  Platform,
+  Pressable,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
 import Icon from "react-native-vector-icons/Ionicons";
+import { Svg, Path } from "react-native-svg";
 import BottomNav from "../../components/BottomNav";
 import { supabase } from "../../lib/supabase";
 import { useUserProfile } from "../../context/UserProfileContext";
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+// Helper formatting function
+function formatDateIntervalRange(start: Date, end: Date) {
+  const s = `${MONTHS[start.getMonth()]} ${start.getDate()}, ${start.getFullYear()}`;
+  const e = `${MONTHS[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
+  return `${s} – ${e}`;
+}
+function formatDateDay(date: Date) {
+  return `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function endOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+
+function polarToCartesian(centerX: number, centerY: number, radius: number, angleInDegrees: number) {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
+  return {
+    x: centerX + radius * Math.cos(angleInRadians),
+    y: centerY + radius * Math.sin(angleInRadians),
+  };
+}
+
+function describeArc(
+  centerX: number,
+  centerY: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number
+) {
+  const start = polarToCartesian(centerX, centerY, radius, endAngle);
+  const end = polarToCartesian(centerX, centerY, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+
+  return [
+    `M ${centerX} ${centerY}`,
+    `L ${start.x} ${start.y}`,
+    `A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`,
+    "Z",
+  ].join(" ");
+}
 
 interface DashboardStats {
   totalStores: number;
   activePromotions: number;
   totalViews: number;
   totalEngagements: number;
+  followerViews: number;
+  nonFollowerViews: number;
 }
+
+const PRESET_PERIODS = [
+  {
+    label: "Last 7 Days",
+    getPeriod: () => {
+      const endDate = endOfDay(new Date());
+      const startDate = startOfDay(new Date(endDate));
+      startDate.setDate(startDate.getDate() - 6);
+      return { startDate, endDate };
+    },
+  },
+  {
+    label: "Last 30 Days",
+    getPeriod: () => {
+      const endDate = endOfDay(new Date());
+      const startDate = startOfDay(new Date(endDate));
+      startDate.setDate(startDate.getDate() - 29);
+      return { startDate, endDate };
+    },
+  },
+  {
+    label: "This Month",
+    getPeriod: () => {
+      const now = new Date();
+      const startDate = startOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
+      const endDate = endOfDay(new Date());
+      return { startDate, endDate };
+    },
+  },
+  {
+    label: "Custom",
+    getPeriod: null, // Will be used for activating the custom range UI
+  },
+];
 
 export default function ProfessionalToolsScreen() {
   const router = useRouter();
   const { userProfile } = useUserProfile();
+
+  // Date Filter: Default to "last 30 days"
+  const defaultPeriod = PRESET_PERIODS[1].getPeriod ? PRESET_PERIODS[1].getPeriod!() : null;
+  const fallbackStart = startOfDay(new Date());
+  const fallbackEnd = endOfDay(new Date());
+  const [startDate, setStartDate] = useState<Date>(defaultPeriod?.startDate ?? fallbackStart);
+  const [endDate, setEndDate] = useState<Date>(defaultPeriod?.endDate ?? fallbackEnd);
+
+  // For the "preset" time selector UI
+  const [selectedPreset, setSelectedPreset] = useState(1); // 0 = "Last 7 Days", 1 = "Last 30 Days", etc.
+
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [pickerMode, setPickerMode] = useState<"start" | "end">("start");
+
+  const [showCustomRange, setShowCustomRange] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     totalStores: 0,
     activePromotions: 0,
     totalViews: 0,
     totalEngagements: 0,
+    followerViews: 0,
+    nonFollowerViews: 0,
   });
 
+  // Scroll limit logic
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const MIN_SCROLL_Y = -40;
+  const lastScrollY = useRef(0);
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = event.nativeEvent.contentOffset.y;
+    if (y < MIN_SCROLL_Y && scrollViewRef.current) {
+      scrollViewRef.current.scrollTo({ y: MIN_SCROLL_Y, animated: false });
+    }
+    lastScrollY.current = y;
+  };
+
   useEffect(() => {
+    // Refetch when startDate or endDate changes
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
@@ -43,14 +178,14 @@ export default function ProfessionalToolsScreen() {
           return;
         }
 
-        // Fetch stores count
+        // Fetch stores count (not filtered by date)
         const { data: storesData } = await supabase
           .from("store_applications")
           .select("id")
           .eq("user_id", userId)
           .eq("status", "accepted");
 
-        // Fetch active promotions count
+        // Fetch active promotions count (not filtered by date)
         const { data: promotionsData } = await supabase
           .from("promotions")
           .select("id, expires_at, is_active")
@@ -62,11 +197,28 @@ export default function ProfessionalToolsScreen() {
           return expiresAt > new Date();
         }) || [];
 
+        // Filter store_profile_views by timestamp inside date interval!
+        const startIso = startOfDay(startDate).toISOString();
+        const endIso = endOfDay(endDate).toISOString();
+
+        const { data: viewRows } = await supabase
+          .from("store_profile_views")
+          .select("is_follower, created_at")
+          .eq("store_owner_id", userId)
+          .gte("created_at", startIso)
+          .lte("created_at", endIso);
+
+        const followerViews = viewRows?.filter((row) => row.is_follower)?.length || 0;
+        const allViews = viewRows?.length || 0;
+        const nonFollowerViews = Math.max(allViews - followerViews, 0);
+
         setStats({
           totalStores: storesData?.length || 0,
           activePromotions: activePromos.length,
-          totalViews: 0, // Placeholder - would need analytics table
+          totalViews: followerViews + nonFollowerViews,
           totalEngagements: 0, // Placeholder - would need analytics table
+          followerViews,
+          nonFollowerViews,
         });
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
@@ -76,36 +228,56 @@ export default function ProfessionalToolsScreen() {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [startDate, endDate]);
 
-  const quickActions = [
-    {
-      title: "My Stores",
-      icon: "storefront-outline",
-      color: "#468dff",
-      onPress: () => router.push("/(tabs)/mystore"),
-    },
-    {
-      title: "Create Promotion",
-      icon: "add-circle-outline",
-      color: "#4caf50",
-      onPress: () => router.push("/(tabs)/mystore"),
-    },
-    {
-      title: "Analytics",
-      icon: "analytics-outline",
-      color: "#ff9800",
-      onPress: () => {
-        // Navigate to analytics if available
-      },
-    },
-    {
-      title: "Settings",
-      icon: "settings-outline",
-      color: "#9c27b0",
-      onPress: () => router.push("/(tabs)/settings"),
-    },
-  ];
+  // Date picker logic
+  const openCustomRange = () => {
+    setShowCustomRange(true);
+    setSelectedPreset(PRESET_PERIODS.length - 1);
+  };
+
+  const handlePresetSelect = (index: number) => {
+    setSelectedPreset(index);
+    if (PRESET_PERIODS[index].getPeriod) {
+      const newPeriod = PRESET_PERIODS[index].getPeriod!();
+      setStartDate(startOfDay(newPeriod.startDate));
+      setEndDate(endOfDay(newPeriod.endDate));
+      setShowCustomRange(false);
+    } else {
+      setShowCustomRange(true);
+    }
+  };
+
+  const handleOpenDatePicker = (mode: "start" | "end") => {
+    setPickerMode(mode);
+    setDatePickerVisible(true);
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setDatePickerVisible(false);
+    if (!selectedDate) return;
+
+    setSelectedPreset(PRESET_PERIODS.length - 1);
+    setShowCustomRange(true);
+
+    if (pickerMode === "start") {
+      const normalizedStart = startOfDay(selectedDate);
+      let normalizedEnd = endDate;
+      if (normalizedStart > endDate) {
+        normalizedEnd = endOfDay(selectedDate);
+      }
+      setStartDate(normalizedStart);
+      setEndDate(normalizedEnd);
+    } else {
+      const normalizedEnd = endOfDay(selectedDate);
+      let normalizedStart = startDate;
+      if (normalizedEnd < startDate) {
+        normalizedStart = startOfDay(selectedDate);
+      }
+      setStartDate(normalizedStart);
+      setEndDate(normalizedEnd);
+    }
+  };
 
   const StatCard = ({
     title,
@@ -127,17 +299,143 @@ export default function ProfessionalToolsScreen() {
     </View>
   );
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Professional Tools</Text>
-          <Text style={styles.headerSubtitle}>
-            Manage your stores and track performance
+  // INSIGHT section coloring should NOT be changed for the chart
+  const ViewBreakdownChart = ({
+    followerViews,
+    nonFollowerViews,
+  }: {
+    followerViews: number;
+    nonFollowerViews: number;
+  }) => {
+    const chart = useMemo(() => {
+      const dataset = [
+        { key: "followers", label: "Followers", value: followerViews, color: "#d743f5" },
+        { key: "nonFollowers", label: "Non-followers", value: nonFollowerViews, color: "#4c4bff" },
+      ];
+      const total = dataset.reduce((sum, item) => sum + item.value, 0);
+      const center = 90;
+      const radius = 70;
+
+      const slices = dataset.map((item, index, arr) => {
+        if (total === 0) {
+          return { ...item, path: "", percentage: 0 };
+        }
+        const previousValue = arr.slice(0, index).reduce((sum, s) => sum + s.value, 0);
+        const startAngle = (previousValue / total) * 360;
+        const endAngle = ((previousValue + item.value) / total) * 360;
+        return {
+          ...item,
+          path: describeArc(center, center, radius, startAngle, endAngle),
+          percentage: Math.round((item.value / total) * 100),
+        };
+      });
+
+      return { slices, total };
+    }, [followerViews, nonFollowerViews]);
+
+    if (chart.total === 0) {
+      return (
+        <View style={styles.chartEmptyState}>
+          <Text style={styles.emptyStateText}>
+            No profile views yet. Share your store to start tracking visits.
           </Text>
         </View>
+      );
+    }
+
+    return (
+      <View style={styles.pieChartContainer}>
+        <Svg width={180} height={180} viewBox="0 0 180 180">
+          {chart.slices.map(
+            (slice) =>
+              slice.path && (
+                <Path key={slice.key} d={slice.path} fill={slice.color} stroke="#f4f4f6" strokeWidth={2} />
+              )
+          )}
+        </Svg>
+        <View style={styles.chartLegend}>
+          {chart.slices.map((slice) => (
+            <View key={slice.key} style={styles.legendRow}>
+              <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.legendLabel}>{slice.label}</Text>
+                <Text style={styles.legendValue}>
+                  {slice.value} • {slice.percentage}%
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
+    );
+  };
+
+  const followerPercent = stats.totalViews
+    ? Math.round((stats.followerViews / stats.totalViews) * 1000) / 10
+    : 0;
+  const nonFollowerPercent = Math.max(0, Math.round((100 - followerPercent) * 10) / 10);
+
+  // Replace violet colors everywhere, including the promoCards and INSIGHTS time filter, with #191820
+  const promoCards = [
+    {
+      title: "15% OFF JUST FOR YOU",
+      description: "Reward shoppers who complete their first order.",
+      accent: "#00c6b7",
+      background: "#e6fbf8",
+    },
+    {
+      title: "SCAN QR CODE",
+      description: "Use QR flyers to collect more followers in-store.",
+      accent: "#191820",
+      background: "#eef0ff",
+    },
+  ];
+
+  // Lower header down by adding marginTop
+  const headerMarginTop = 40;
+
+  return (
+    <View style={styles.container}>
+      {datePickerVisible && (
+        Platform.OS === "ios" ? (
+          <Modal transparent animationType="fade" visible={datePickerVisible}>
+            <Pressable style={styles.modalOverlay} onPress={() => setDatePickerVisible(false)}>
+              <View />
+            </Pressable>
+            <View style={styles.datePickerModalContent}>
+              <DateTimePicker
+                value={pickerMode === "start" ? startDate : endDate}
+                mode="date"
+                display="spinner"
+                onChange={(event, date) => {
+                  if (event.type === "dismissed") return setDatePickerVisible(false);
+                  handleDateChange(event, date || undefined);
+                }}
+                maximumDate={pickerMode === "start" ? endDate : new Date()}
+                minimumDate={pickerMode === "end" ? startDate : undefined}
+              />
+              <TouchableOpacity
+                style={styles.modalDoneButton}
+                onPress={() => setDatePickerVisible(false)}
+              >
+                <Text style={{ fontWeight: "600", fontSize: 16 }}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </Modal>
+        ) : (
+          <DateTimePicker
+            value={pickerMode === "start" ? startDate : endDate}
+            mode="date"
+            display="default"
+            onChange={(event, date) => {
+              if (event.type === "dismissed") return setDatePickerVisible(false);
+              handleDateChange(event, date || undefined);
+            }}
+            maximumDate={pickerMode === "start" ? endDate : new Date()}
+            minimumDate={pickerMode === "end" ? startDate : undefined}
+          />
+        )
+      )}
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -145,21 +443,158 @@ export default function ProfessionalToolsScreen() {
         </View>
       ) : (
         <ScrollView
+          ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
         >
-          {/* Welcome Section */}
-          <View style={styles.welcomeCard}>
-            <Text style={styles.welcomeTitle}>
+          <View style={{ marginTop: headerMarginTop }}>
+            <Text style={styles.greetingTitle}>
               Welcome back, {userProfile?.full_name?.split(" ")[0] || "there"}!
             </Text>
-            <Text style={styles.welcomeText}>
-              Here's an overview of your professional account
-            </Text>
+            <Text style={styles.greetingSubtitle}>Track store performance at a glance.</Text>
           </View>
 
-          {/* Statistics Cards */}
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={styles.sectionTitle}>Insights</Text>
+              <Text style={styles.sectionSubtitle}>Profile performance overview</Text>
+            </View>
+            {/* Redesigned Time Filter */}
+            <View style={styles.insightsTimeToolbar}>
+              <View style={styles.timeFilterPresetRow}>
+                {PRESET_PERIODS.slice(0, -1).map((preset, idx) => (
+                  <TouchableOpacity
+                    key={preset.label}
+                    style={[
+                      styles.timePresetChip,
+                      selectedPreset === idx && styles.timePresetChipActive,
+                    ]}
+                    onPress={() => handlePresetSelect(idx)}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.timePresetChipText,
+                        selectedPreset === idx && styles.timePresetChipTextActive,
+                      ]}
+                    >
+                      {preset.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {/* Custom */}
+                <TouchableOpacity
+                  style={[
+                    styles.timePresetChip,
+                    selectedPreset === PRESET_PERIODS.length - 1 && styles.timePresetChipActive,
+                  ]}
+                  onPress={openCustomRange}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.timePresetChipText,
+                      selectedPreset === PRESET_PERIODS.length - 1 && styles.timePresetChipTextActive,
+                    ]}
+                  >
+                    Custom
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {showCustomRange && (
+                <View style={styles.customRangePickerRow}>
+                  <TouchableOpacity
+                    onPress={() => handleOpenDatePicker("start")}
+                    activeOpacity={0.7}
+                    style={styles.timeRangeSelect}
+                  >
+                    <Text style={styles.timeRangeSelectText}>
+                      {formatDateDay(startDate)}
+                    </Text>
+                    <Icon name="calendar-outline" size={16} color="#888" style={{ marginLeft: 8 }} />
+                  </TouchableOpacity>
+                  <Text style={styles.timeRangeSelectSeparator}>to</Text>
+                  <TouchableOpacity
+                    onPress={() => handleOpenDatePicker("end")}
+                    activeOpacity={0.7}
+                    style={styles.timeRangeSelect}
+                  >
+                    <Text style={styles.timeRangeSelectText}>
+                      {formatDateDay(endDate)}
+                    </Text>
+                    <Icon name="calendar-outline" size={16} color="#888" style={{ marginLeft: 8 }} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {!showCustomRange && (
+                <TouchableOpacity
+                  style={styles.timeSelectedDisplayButton}
+                  onPress={openCustomRange}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.timeSelectedDisplay}>
+                    {formatDateIntervalRange(startDate, endDate)}
+                  </Text>
+                  <Icon name="calendar-outline" size={16} color="#565868" style={{ marginLeft: 6 }} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.tabRow}>
+            <TouchableOpacity style={[styles.tabButton, styles.tabButtonActive]}>
+              <Text style={[styles.tabButtonText, styles.tabButtonTextActive]}>Profile Views</Text>
+            </TouchableOpacity>
+            {/* The "Followers" tab is present, but the text "Followers" next to Profile Views is NOT rendered anywhere */}
+            {/* <TouchableOpacity style={styles.tabButton} activeOpacity={0.8}>
+              <Text style={styles.tabButtonText}>Followers</Text>
+            </TouchableOpacity> */}
+          </View>
+
+          <View style={styles.viewsCard}>
+            <View style={styles.viewsHeader}>
+              <View>
+                <Text style={styles.viewsCount}>{stats.totalViews.toLocaleString()}</Text>
+                <Text style={styles.viewsLabel}>Views</Text>
+              </View>
+              <View style={styles.trendChip}>
+                <Icon name="arrow-up" size={16} color="#28c76f" />
+                <Text style={styles.trendChipText}>
+                  +{stats.totalViews.toLocaleString()}
+                </Text>
+              </View>
+            </View>
+
+            <ViewBreakdownChart
+              followerViews={stats.followerViews}
+              nonFollowerViews={stats.nonFollowerViews}
+            />
+
+            <View style={styles.percentagesRow}>
+              <View style={styles.percentItem}>
+                <View style={[styles.legendDot, { backgroundColor: "#d743f5" }]} />
+                <Text style={styles.percentText}>{followerPercent.toFixed(1)}%</Text>
+              </View>
+              <View style={styles.percentItem}>
+                <View style={[styles.legendDot, { backgroundColor: "#4c4bff" }]} />
+                <Text style={styles.percentText}>{nonFollowerPercent.toFixed(1)}%</Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            activeOpacity={0.85}
+            onPress={() => router.push("/(tabs)/mystore")}
+          >
+            <Icon name="storefront" size={20} color="#fff" />
+            <Text style={styles.primaryButtonText}>My Stores</Text>
+            <Icon name="chevron-forward" size={18} color="#fff" />
+          </TouchableOpacity>
+
           <View style={styles.statsContainer}>
             <StatCard
               title="Total Stores"
@@ -187,48 +622,26 @@ export default function ProfessionalToolsScreen() {
             />
           </View>
 
-          {/* Quick Actions */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <View style={styles.actionsGrid}>
-              {quickActions.map((action, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.actionCard}
-                  onPress={action.onPress}
-                  activeOpacity={0.7}
-                >
-                  <View
-                    style={[
-                      styles.actionIconContainer,
-                      { backgroundColor: `${action.color}15` },
-                    ]}
-                  >
-                    <Icon name={action.icon} size={28} color={action.color} />
-                  </View>
-                  <Text style={styles.actionTitle}>{action.title}</Text>
-                </TouchableOpacity>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Promotions</Text>
+              <TouchableOpacity activeOpacity={0.7}>
+                <Text style={styles.sectionLink}>See all</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.promoScroll}>
+              {promoCards.map((card, index) => (
+                <View key={index} style={[styles.promoCard, { backgroundColor: card.background }]}>
+                  <Text style={[styles.promoTitle, { color: card.accent }]}>{card.title}</Text>
+                  <Text style={styles.promoDescription}>{card.description}</Text>
+                  <TouchableOpacity activeOpacity={0.8} style={styles.promoButton}>
+                    <Text style={styles.promoButtonText}>Get Started</Text>
+                  </TouchableOpacity>
+                </View>
               ))}
-            </View>
+            </ScrollView>
           </View>
 
-          {/* Insights Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Insights</Text>
-            <View style={styles.insightCard}>
-              <View style={styles.insightHeader}>
-                <Icon name="trending-up-outline" size={20} color="#468dff" />
-                <Text style={styles.insightTitle}>Performance Overview</Text>
-              </View>
-              <Text style={styles.insightText}>
-                {stats.totalStores > 0
-                  ? `You have ${stats.totalStores} store${stats.totalStores > 1 ? "s" : ""} with ${stats.activePromotions} active promotion${stats.activePromotions !== 1 ? "s" : ""}. Keep creating engaging content to reach more customers!`
-                  : "Get started by creating your first store and promotion to see insights here."}
-              </Text>
-            </View>
-          </View>
-
-          {/* Tips Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Tips & Best Practices</Text>
             <View style={styles.tipCard}>
@@ -244,7 +657,7 @@ export default function ProfessionalToolsScreen() {
               </Text>
             </View>
             <View style={styles.tipCard}>
-              <Icon name="images-outline" size={20} color="#9c27b0" />
+              <Icon name="images-outline" size={20} color="#191820" />
               <Text style={styles.tipText}>
                 Upload high-quality photos of your store to make a great first impression.
               </Text>
@@ -252,7 +665,6 @@ export default function ProfessionalToolsScreen() {
           </View>
         </ScrollView>
       )}
-
       <BottomNav visible />
     </View>
   );
@@ -261,26 +673,7 @@ export default function ProfessionalToolsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
-  },
-  header: {
-    backgroundColor: "#191820",
-    paddingTop: 70,
-    paddingBottom: 75,
-    paddingHorizontal: 25,
-    borderBottomLeftRadius: 45,
-    borderBottomRightRadius: 45,
-    marginBottom: 15,
-  },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 30,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    color: "#ccc",
-    fontSize: 16,
+    backgroundColor: "#f4f4f6",
   },
   loadingContainer: {
     flex: 1,
@@ -291,27 +684,276 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
+    padding: 20,
+    paddingBottom: 110,
   },
-  welcomeCard: {
-    backgroundColor: "#f8f9fa",
-    borderRadius: 16,
+  topBar: {
+    display: "none",
+  },
+  greetingTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#181a20",
+  },
+  greetingSubtitle: {
+    fontSize: 14,
+    color: "#8f92a1",
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  sectionSubtitle: {
+    color: "#8f92a1",
+    fontSize: 13,
+    marginTop: 2,
+  },
+  // New/adjusted "Insights" time filter toolbar
+  insightsTimeToolbar: {
+    alignItems: "flex-end",
+    minWidth: 170,
+    marginLeft: 15,
+  },
+  timeFilterPresetRow: {
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    marginBottom: 4,
+  },
+  timePresetChip: {
+    backgroundColor: "#f1f2f5",
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginRight: 5,
+    marginBottom: 4,
+  },
+  timePresetChipActive: {
+    backgroundColor: "#191820",
+  },
+  timePresetChipText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#191820",
+  },
+  timePresetChipTextActive: {
+    color: "#fff",
+    fontWeight: "800",
+  },
+  customRangePickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  timeRangeSelect: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ece8fb",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  timeRangeSelectText: {
+    fontSize: 12,
+    color: "#191820",
+    fontWeight: "600",
+  },
+  timeRangeSelectSeparator: {
+    marginHorizontal: 6,
+    color: "#555",
+    fontSize: 12,
+  },
+  timeSelectedDisplay: {
+    fontSize: 12,
+    color: "#8f92a1",
+    fontWeight: "600",
+    textAlign: "right",
+  },
+  timeSelectedDisplayButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-end",
+    backgroundColor: "#f1f2f5",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginTop: 4,
+  },
+  dateChip: {
+    display: "none", // old chip UI hidden for rework
+  },
+  dateChipText: {
+    fontSize: 13,
+    color: "#191820",
+    fontWeight: "600",
+  },
+  datePickerButton: {
+    backgroundColor: "#f1f2f5",
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  datePickerButtonText: {
+    fontSize: 12,
+    color: "#83818d",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "#0005",
+  },
+  datePickerModalContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    padding: 20,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    alignItems: "center",
+  },
+  modalDoneButton: {
+    marginTop: 10,
+    backgroundColor: "#eee",
+    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+
+  tabRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  tabButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    backgroundColor: "transparent",
+    marginRight: 10,
+  },
+  tabButtonActive: {
+    backgroundColor: "#191820",
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#8f92a1",
+  },
+  tabButtonTextActive: {
+    color: "#fff",
+  },
+  viewsCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
     padding: 20,
     marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: "#468dff",
+    borderWidth: 1,
+    borderColor: "#ecedf2",
   },
-  welcomeTitle: {
-    fontSize: 20,
+  viewsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  viewsCount: {
+    fontSize: 34,
+    fontWeight: "800",
+    color: "#181a20",
+  },
+  viewsLabel: {
+    fontSize: 14,
+    color: "#8f92a1",
+  },
+  trendChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e9f9f1",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 30,
+    gap: 4,
+  },
+  trendChipText: {
+    color: "#28c76f",
     fontWeight: "700",
-    color: "#191820",
-    marginBottom: 6,
+    fontSize: 14,
   },
-  welcomeText: {
+  chartEmptyState: {
+    marginTop: 24,
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: "#f7f7fb",
+  },
+  pieChartContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 16,
+  },
+  chartLegend: {
+    flex: 1,
+    marginLeft: 24,
+  },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  legendDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginRight: 10,
+  },
+  legendLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#191820",
+  },
+  legendValue: {
+    fontSize: 13,
+    color: "#666",
+  },
+  emptyStateText: {
     fontSize: 14,
     color: "#666",
     lineHeight: 20,
+  },
+  percentagesRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 18,
+  },
+  percentItem: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  percentText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#191820",
+  },
+  primaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#191820",
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    marginBottom: 24,
+  },
+  primaryButtonText: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
   },
   statsContainer: {
     flexDirection: "row",
@@ -321,16 +963,15 @@ const styles = StyleSheet.create({
   },
   statCard: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 18,
     width: "48%",
-    marginBottom: 12,
+    marginBottom: 14,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
   },
   statIconContainer: {
     width: 50,
@@ -347,73 +988,54 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   statTitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#666",
     textAlign: "center",
   },
   section: {
-    marginBottom: 25,
+    marginBottom: 28,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: "700",
     color: "#191820",
-    marginBottom: 15,
   },
-  actionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  actionCard: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    width: "48%",
-    marginBottom: 12,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  actionIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  actionTitle: {
+  sectionLink: {
     fontSize: 14,
     fontWeight: "600",
     color: "#191820",
-    textAlign: "center",
   },
-  insightCard: {
-    backgroundColor: "#f8f9fa",
-    borderRadius: 16,
+  promoScroll: {
+    paddingVertical: 4,
+    paddingRight: 6,
+  },
+  promoCard: {
+    width: 220,
+    borderRadius: 18,
     padding: 18,
-    borderLeftWidth: 4,
-    borderLeftColor: "#468dff",
+    marginRight: 16,
   },
-  insightHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  insightTitle: {
+  promoTitle: {
     fontSize: 16,
-    fontWeight: "700",
-    color: "#191820",
-    marginLeft: 8,
+    fontWeight: "800",
+    marginBottom: 8,
   },
-  insightText: {
-    fontSize: 14,
-    color: "#666",
-    lineHeight: 20,
+  promoDescription: {
+    fontSize: 13,
+    color: "#51535d",
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  promoButton: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  promoButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#15141f",
   },
   tipCard: {
     flexDirection: "row",
@@ -422,17 +1044,15 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     shadowColor: "#000",
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
   tipText: {
     flex: 1,
     fontSize: 14,
-    color: "#666",
+    color: "#555",
     lineHeight: 20,
     marginLeft: 12,
   },
 });
-

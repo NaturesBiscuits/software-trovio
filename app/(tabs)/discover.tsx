@@ -139,7 +139,8 @@ const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClos
     // CHANGED: Directly go to the actual myStore file
     { label: 'My Store', icon: 'storefront-outline', action: () => router.push('/(tabs)/mystore') },
     { label: 'Saved Stores', icon: 'bookmark-outline', action: () => router.push('/(tabs)/savedstores') },
-    { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/topNavTabs/professionalTools') },
+    // Professional Tools button now pushes to /proftools
+    { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/proftools') },
     { label: 'Settings', icon: 'settings-outline', action: () => {} },
     { label: 'Logout', icon: 'log-out-outline', action: async () => {
         // Clear image cache before logout

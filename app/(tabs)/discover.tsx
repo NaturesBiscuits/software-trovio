@@ -1,6 +1,9 @@
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
   Easing,
@@ -13,11 +16,8 @@ import {
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  View,
-  Alert
+  View
 } from 'react-native';
-import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { supabase } from '../../lib/supabase';
 
@@ -278,7 +278,11 @@ export default function HomeScreen() {
         flipCard={() => setFlippedCardIndex((prev) => (prev === index ? null : index))}
         onViewProfile={(store) => setSelectedStore(store)}
       />
-      {!flipHintDismissed && index === 0 && <HoldIndicator style={styles.holdIndicatorPosition} />}
+      {!flipHintDismissed && index === 0 && (
+        <View style={styles.holdIndicatorPosition}>
+          <HoldIndicator />
+        </View>
+      )}
     </View>
   ), [flippedCardIndex, flipHintDismissed, userCoords, hasLocPerm]);
 

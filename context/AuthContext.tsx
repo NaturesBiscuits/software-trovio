@@ -36,6 +36,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(session?.user ?? null);
         setLoading(false);
         
+        // Clear image cache on logout
+        if (event === 'SIGNED_OUT') {
+          const { clearImageCache } = await import('../lib/imageUtils');
+          const { clearImageUrlCache } = await import('../lib/imageCache');
+          await clearImageCache();
+          await clearImageUrlCache();
+        }
+        
         // Load user's language preference on login
         if (event === 'SIGNED_IN' && session?.user) {
           loadProfileLanguage();

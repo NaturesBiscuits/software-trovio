@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { getStorageImageUrls } from '../lib/storageUtils';
+import { getCachedImageUrls } from '../lib/imageCache';
 
 export interface StoreApplication {
   id: string;
@@ -27,15 +28,15 @@ export default function VerticalStoreCard({ store, onPress }: VerticalStoreCardP
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [imageLoading, setImageLoading] = useState(true);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
 
-  // Load image asynchronously
+  // Load image asynchronously with caching
   useEffect(() => {
     let isActive = true;
     const loadImages = async () => {
       if (store.photos_url?.length && store.user_id) {
         setImageLoading(true);
-        const urls = await getStorageImageUrls(store.photos_url, store.user_id);
+        // Use cached image URLs (cached in AsyncStorage, won't re-fetch if valid)
+        const urls = await getCachedImageUrls(store.photos_url, store.user_id);
         if (!isActive) return;
         const filtered = urls.filter((url): url is string => Boolean(url));
         setImageUrls(filtered);
@@ -52,26 +53,16 @@ export default function VerticalStoreCard({ store, onPress }: VerticalStoreCardP
     };
   }, [store.photos_url, store.user_id]);
 
+  // Auto-rotate images
   useEffect(() => {
     if (imageUrls.length <= 1) return;
 
     const interval = setInterval(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        setCurrentPhotoIndex((prev) => (prev + 1) % imageUrls.length);
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }).start();
-      });
+      setCurrentPhotoIndex((prev) => (prev + 1) % imageUrls.length);
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [imageUrls.length, fadeAnim]);
+  }, [imageUrls.length]);
 
   return (
     <TouchableOpacity
@@ -81,10 +72,13 @@ export default function VerticalStoreCard({ store, onPress }: VerticalStoreCardP
     >
       <View style={styles.imageContainer}>
         {imageUrls.length > 0 && !imageLoading ? (
-          <Animated.Image 
-            source={{ uri: imageUrls[currentPhotoIndex] }} 
-            style={[styles.verticalImg, { opacity: fadeAnim }]} 
-            resizeMode="cover"
+          <Image
+            source={{ uri: imageUrls[currentPhotoIndex] }}
+            style={styles.verticalImg}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="memory-disk" // Use disk cache for persistence
+            placeholderContentFit="cover"
           />
         ) : (
           <View style={styles.verticalPlaceholder}>

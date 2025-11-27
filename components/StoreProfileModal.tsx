@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { supabase } from '../lib/supabase';
-import { getStorageImageUrls } from '../lib/storageUtils';
+import { getCachedImageUrls } from '../lib/imageCache';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StoreApplication } from './DiscoverFlipCard';
@@ -185,7 +185,7 @@ export default function StoreProfileModal({
       }
       setLoadingPhotos(true);
       try {
-        const urls = await getStorageImageUrls(store.photos_url, store.user_id);
+        const urls = await getCachedImageUrls(store.photos_url, store.user_id);
         setPhotoUrls(urls.filter((url): url is string => Boolean(url)));
       } catch (error) {
         setPhotoUrls([]);
@@ -287,7 +287,7 @@ export default function StoreProfileModal({
           .update({ photos_url: newPhotosArray })
           .eq('id', store.id);
 
-        const newPhotoUrls = await getStorageImageUrls(uploadedUrls, store.user_id!);
+        const newPhotoUrls = await getCachedImageUrls(uploadedUrls, store.user_id!);
         setPhotoUrls(prev => prev.concat(newPhotoUrls.filter(Boolean) as string[]));
       }
     } catch (e) {

@@ -141,6 +141,16 @@ const ProfileSidePanel = ({ visible, onClose, user }: { visible: boolean; onClos
     { label: 'Saved Stores', icon: 'bookmark-outline', action: () => router.push('/(tabs)/savedstores') },
     { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/topNavTabs/professionalTools') },
     { label: 'Settings', icon: 'settings-outline', action: () => {} },
+    { label: 'Logout', icon: 'log-out-outline', action: async () => {
+        // Clear image cache before logout
+        const { clearImageCache } = await import('../../lib/imageUtils');
+        const { clearImageUrlCache } = await import('../../lib/imageCache');
+        await clearImageCache();
+        await clearImageUrlCache();
+        const { error } = await supabase.auth.signOut();
+        if (!error) router.replace('/(auth)/login');
+      } 
+    },
     { label: 'Logout', icon: 'log-out-outline', action: handleLogout },
   ];
 

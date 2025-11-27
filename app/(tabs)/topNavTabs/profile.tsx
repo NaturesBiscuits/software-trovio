@@ -127,6 +127,11 @@ export default function ProfileScreen() {
         onPress={async () => {
           try {
             setIsSigningOut(true);
+            // Clear image cache before logout
+            const { clearImageCache } = await import('@/lib/imageUtils');
+            const { clearImageUrlCache } = await import('@/lib/imageCache');
+            await clearImageCache();
+            await clearImageUrlCache();
             await supabase.auth.signOut();
           } finally {
             setIsSigningOut(false);

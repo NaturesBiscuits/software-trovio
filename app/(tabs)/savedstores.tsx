@@ -70,8 +70,8 @@ function VerticalStoreCardOnlyImage({ store }: { store: StoreApplication }) {
     const doLoad = async () => {
       if (store.photos_url?.length && store.user_id) {
         setImageLoading(true);
-        const { getStorageImageUrls } = await import("../../lib/storageUtils");
-        const urls = await getStorageImageUrls(store.photos_url, store.user_id);
+        const { getCachedImageUrls } = await import("../../lib/imageCache");
+        const urls = await getCachedImageUrls(store.photos_url, store.user_id);
         if (!isActive) return;
         const filtered = urls.filter((url: any): url is string => Boolean(url));
         setImageUrls(filtered);

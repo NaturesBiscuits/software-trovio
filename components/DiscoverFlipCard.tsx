@@ -10,8 +10,9 @@ import {
   View,
   Dimensions,
 } from 'react-native';
+import { Image } from 'expo-image';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { getStorageImageUrls } from '../lib/storageUtils';
+import { getCachedImageUrls } from '../lib/imageCache';
 
 export interface StoreApplication {
   id: string;
@@ -72,15 +73,15 @@ export default React.memo(function DiscoverFlipCard({
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [imageLoading, setImageLoading] = useState(true);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
 
-  // Load image asynchronously
+  // Load image asynchronously with caching
   useEffect(() => {
     let isActive = true;
     const loadImages = async () => {
       if (item.photos_url?.length && item.user_id) {
         setImageLoading(true);
-        const urls = await getStorageImageUrls(item.photos_url, item.user_id);
+        // Use cached image URLs (cached in AsyncStorage, won't re-fetch if valid)
+        const urls = await getCachedImageUrls(item.photos_url, item.user_id);
         if (!isActive) return;
         const filtered = urls.filter((url): url is string => Boolean(url));
         setImageUrls(filtered);
@@ -101,22 +102,11 @@ export default React.memo(function DiscoverFlipCard({
     if (imageUrls.length <= 1) return;
 
     const interval = setInterval(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        setCurrentPhotoIndex((prev) => (prev + 1) % imageUrls.length);
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }).start();
-      });
+      setCurrentPhotoIndex((prev) => (prev + 1) % imageUrls.length);
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [imageUrls.length, fadeAnim]);
+  }, [imageUrls.length]);
 
   const { distanceStr, pathLink, locationStatus } = useMemo(() => {
     let status: 'has' | 'no-permission' | 'no-store-location' = 'has';
@@ -188,10 +178,13 @@ export default React.memo(function DiscoverFlipCard({
       <Animated.View style={[styles.flipCardFace, frontAnimatedStyle]}>
         <View style={styles.discoverCardContent}>
           {imageUrls.length > 0 && !imageLoading ? (
-            <Animated.Image 
-              source={{ uri: imageUrls[currentPhotoIndex] }} 
-              style={[styles.discoverImage, { opacity: fadeAnim }]}
-              resizeMode="cover"
+            <Image
+              source={{ uri: imageUrls[currentPhotoIndex] }}
+              style={styles.discoverImage}
+              contentFit="cover"
+              transition={200}
+              cachePolicy="memory-disk" // Use disk cache for persistence
+              placeholderContentFit="cover"
             />
           ) : (
             <View style={styles.placeholderBox}>

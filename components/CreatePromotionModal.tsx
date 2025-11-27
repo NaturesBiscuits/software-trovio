@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  ScrollView,
+  KeyboardAvoidingView,
+  InputAccessoryView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
@@ -38,7 +41,9 @@ export default function CreatePromotionModal({
   const [expiresAt, setExpiresAt] = useState<Date>(new Date(Date.now() + 24 * 60 * 60 * 1000)); // Default: 24 hours from now
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [iosPickerMode, setIosPickerMode] = useState<'date' | 'time'>('date');
   const [uploading, setUploading] = useState(false);
+  const descriptionInputRef = useRef<TextInput>(null);
 
   const wordCount = description.trim().split(/\s+/).filter(Boolean).length;
   const maxWords = 60;
@@ -63,22 +68,43 @@ export default function CreatePromotionModal({
   };
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setExpiresAt(selectedDate);
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    if (selectedDate && event.type !== 'dismissed') {
+      // Preserve the current time when changing date
+      const newDate = new Date(selectedDate);
+      newDate.setHours(expiresAt.getHours());
+      newDate.setMinutes(expiresAt.getMinutes());
+      newDate.setSeconds(0);
+      setExpiresAt(newDate);
+    }
+    if (event.type === 'dismissed') {
+      setShowDatePicker(false);
+      setShowTimePicker(false);
     }
   };
 
   const handleTimeChange = (event: any, selectedTime?: Date) => {
-    setShowTimePicker(false);
-    if (selectedTime) {
-      // Combine date and time
+    if (Platform.OS === 'android') {
+      setShowTimePicker(false);
+    }
+    if (selectedTime && event.type !== 'dismissed') {
+      // Preserve the current date when changing time
       const newDate = new Date(expiresAt);
       newDate.setHours(selectedTime.getHours());
       newDate.setMinutes(selectedTime.getMinutes());
       newDate.setSeconds(0);
       setExpiresAt(newDate);
     }
+    if (event.type === 'dismissed') {
+      setShowDatePicker(false);
+      setShowTimePicker(false);
+    }
+  };
+
+  const dismissKeyboard = () => {
+    descriptionInputRef.current?.blur();
   };
 
   const handleSubmit = async () => {
@@ -162,6 +188,8 @@ export default function CreatePromotionModal({
     });
   };
 
+  const inputAccessoryViewID = 'descriptionInputAccessory';
+
   return (
     <Modal
       visible={visible}
@@ -169,7 +197,11 @@ export default function CreatePromotionModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalOverlay}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Create Promotion</Text>
@@ -178,7 +210,13 @@ export default function CreatePromotionModal({
             </TouchableOpacity>
           </View>
 
-          <View style={styles.form}>
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={true}
+          >
+            <View style={styles.form}>
             {/* Title Input */}
             <Text style={styles.label}>Promotion Title *</Text>
             <TextInput
@@ -194,7 +232,20 @@ export default function CreatePromotionModal({
             <Text style={styles.label}>
               Promotion Details * ({wordCount}/{maxWords} words)
             </Text>
+            {Platform.OS === 'ios' && (
+              <InputAccessoryView nativeID={inputAccessoryViewID}>
+                <View style={styles.inputAccessory}>
+                  <TouchableOpacity
+                    onPress={dismissKeyboard}
+                    style={styles.doneButton}
+                  >
+                    <Text style={styles.doneButtonText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              </InputAccessoryView>
+            )}
             <TextInput
+              ref={descriptionInputRef}
               value={description}
               onChangeText={(text) => {
                 const words = text.trim().split(/\s+/).filter(Boolean);
@@ -210,6 +261,9 @@ export default function CreatePromotionModal({
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              inputAccessoryViewID={Platform.OS === 'ios' ? inputAccessoryViewID : undefined}
+              returnKeyType="done"
+              blurOnSubmit={true}
             />
 
             {/* Image Upload */}
@@ -239,65 +293,163 @@ export default function CreatePromotionModal({
 
             {/* Expiration Date/Time */}
             <Text style={styles.label}>Expiration Date & Time *</Text>
-            <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Icon name="calendar-outline" size={20} color="#1f78ff" />
-              <Text style={styles.dateText}>{formatDateTime(expiresAt)}</Text>
-            </TouchableOpacity>
+            <View style={styles.dateTimeContainer}>
+              <TouchableOpacity
+                style={styles.dateButton}
+                onPress={() => {
+                  if (Platform.OS === 'ios') {
+                    setIosPickerMode('date');
+                    setShowDatePicker(true);
+                    setShowTimePicker(true);
+                  } else {
+                    setShowDatePicker(true);
+                    setShowTimePicker(false);
+                  }
+                }}
+              >
+                <Icon name="calendar-outline" size={20} color="#1f78ff" />
+                <Text style={styles.dateText}>{formatDateTime(expiresAt)}</Text>
+              </TouchableOpacity>
 
-            {showDatePicker && (
+              <TouchableOpacity
+                style={styles.timeButton}
+                onPress={() => {
+                  if (Platform.OS === 'ios') {
+                    setIosPickerMode('time');
+                    setShowDatePicker(true);
+                    setShowTimePicker(true);
+                  } else {
+                    setShowTimePicker(true);
+                    setShowDatePicker(false);
+                  }
+                }}
+              >
+                <Icon name="time-outline" size={20} color="#1f78ff" />
+                <Text style={styles.dateText}>Change Time</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Android Date/Time Pickers */}
+            {Platform.OS === 'android' && showDatePicker && (
               <DateTimePicker
                 value={expiresAt}
                 mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                display="default"
                 onChange={handleDateChange}
                 minimumDate={new Date()}
               />
             )}
 
-            {showTimePicker && (
+            {Platform.OS === 'android' && showTimePicker && (
               <DateTimePicker
                 value={expiresAt}
                 mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                display="default"
                 onChange={handleTimeChange}
               />
             )}
 
-            <TouchableOpacity
-              style={styles.timeButton}
-              onPress={() => setShowTimePicker(true)}
-            >
-              <Icon name="time-outline" size={20} color="#1f78ff" />
-              <Text style={styles.dateText}>Change Time</Text>
-            </TouchableOpacity>
-          </View>
+            {/* iOS Date/Time Picker Modal */}
+            {Platform.OS === 'ios' && showDatePicker && (
+              <Modal
+                visible={showDatePicker}
+                transparent
+                animationType="slide"
+                onRequestClose={() => {
+                  setShowDatePicker(false);
+                  setShowTimePicker(false);
+                }}
+              >
+                <View style={styles.iosPickerOverlay}>
+                  <TouchableOpacity
+                    style={styles.iosPickerBackdrop}
+                    activeOpacity={1}
+                    onPress={() => {
+                      setShowDatePicker(false);
+                      setShowTimePicker(false);
+                    }}
+                  />
+                  <View style={styles.iosPickerContainer}>
+                    <View style={styles.iosPickerHeader}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowDatePicker(false);
+                          setShowTimePicker(false);
+                        }}
+                      >
+                        <Text style={styles.iosPickerCancel}>Cancel</Text>
+                      </TouchableOpacity>
+                      <View style={styles.iosPickerModeSelector}>
+                        <TouchableOpacity
+                          style={[styles.iosPickerModeButton, iosPickerMode === 'date' && styles.iosPickerModeButtonActive]}
+                          onPress={() => setIosPickerMode('date')}
+                        >
+                          <Text style={[styles.iosPickerModeText, iosPickerMode === 'date' && styles.iosPickerModeTextActive]}>
+                            Date
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.iosPickerModeButton, iosPickerMode === 'time' && styles.iosPickerModeButtonActive]}
+                          onPress={() => setIosPickerMode('time')}
+                        >
+                          <Text style={[styles.iosPickerModeText, iosPickerMode === 'time' && styles.iosPickerModeTextActive]}>
+                            Time
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowDatePicker(false);
+                          setShowTimePicker(false);
+                        }}
+                      >
+                        <Text style={styles.iosPickerDone}>Done</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.iosPickerContent}>
+                      <DateTimePicker
+                        key={iosPickerMode}
+                        value={expiresAt}
+                        mode={iosPickerMode}
+                        display="spinner"
+                        onChange={iosPickerMode === 'date' ? handleDateChange : handleTimeChange}
+                        minimumDate={iosPickerMode === 'date' ? new Date() : undefined}
+                        style={styles.iosPicker}
+                        textColor="#000"
+                        themeVariant="light"
+                        locale="en_US"
+                      />
+                    </View>
+                  </View>
+                </View>
+              </Modal>
+            )}
+              </View>
+            </ScrollView>
 
-          {/* Actions */}
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={onClose}
-              disabled={uploading}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.submitButton, uploading && styles.disabledButton]}
-              onPress={handleSubmit}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.submitButtonText}>Create Promotion</Text>
-              )}
-            </TouchableOpacity>
+            {/* Actions */}
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={onClose}
+                disabled={uploading}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.submitButton, uploading && styles.disabledButton]}
+                onPress={handleSubmit}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Create Promotion</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </View>
+        </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -317,6 +469,105 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     maxHeight: '90%',
+  },
+  scrollView: {
+    maxHeight: 400,
+  },
+  scrollContent: {
+    paddingBottom: 10,
+  },
+  inputAccessory: {
+    backgroundColor: '#f0f0f0',
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  doneButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  doneButtonText: {
+    color: '#1f78ff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dateTimeContainer: {
+    gap: 8,
+  },
+  iosPickerOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  iosPickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  iosPickerContainer: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    maxHeight: '50%',
+  },
+  iosPickerContent: {
+    height: 216,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  iosPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  iosPickerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  iosPickerCancel: {
+    fontSize: 16,
+    color: '#666',
+  },
+  iosPickerDone: {
+    fontSize: 16,
+    color: '#1f78ff',
+    fontWeight: '600',
+  },
+  iosPicker: {
+    width: '100%',
+    height: 216,
+  },
+  iosPickerModeSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    padding: 4,
+  },
+  iosPickerModeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  iosPickerModeButtonActive: {
+    backgroundColor: '#1f78ff',
+  },
+  iosPickerModeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  iosPickerModeTextActive: {
+    color: '#fff',
   },
   modalHeader: {
     flexDirection: 'row',

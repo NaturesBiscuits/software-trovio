@@ -187,7 +187,7 @@ const ProfileSidePanel = ({
     ...(hasProAccess
       ? [
           { label: 'My Store', icon: 'storefront-outline', action: () => router.push('/(tabs)/mystore') },
-          { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/proftools') },
+          { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/proftoolsanalytics') },
         ]
       : []),
     { label: 'Saved Stores', icon: 'bookmark-outline', action: () => router.push('/(tabs)/savedstores') },

@@ -18,6 +18,7 @@ import { Path, Svg } from "react-native-svg";
 import Icon from "react-native-vector-icons/Ionicons";
 import BottomNav from "../../components/BottomNav";
 import { useUserProfile } from "../../context/UserProfileContext";
+import { getCurrentUser } from "../../lib/authUtils";
 import { supabase } from "../../lib/supabase";
 
 const MONTHS = [
@@ -196,10 +197,10 @@ export default function ProfessionalToolsScreen() {
   useEffect(() => {
     const fetchStores = async () => {
       try {
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData?.user?.id;
+        const { user, error: authError } = await getCurrentUser();
+        const userId = user?.id;
 
-        if (!userId) return;
+        if (authError || !userId) return;
 
         const { data: storesData } = await supabase
           .from("store_applications")
@@ -235,10 +236,10 @@ export default function ProfessionalToolsScreen() {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData?.user?.id;
+        const { user, error: authError } = await getCurrentUser();
+        const userId = user?.id;
 
-        if (!userId) {
+        if (authError || !userId) {
           setLoading(false);
           return;
         }
@@ -344,10 +345,10 @@ export default function ProfessionalToolsScreen() {
     const fetchEngagementStats = async () => {
       setLoadingEngagements(true);
       try {
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData?.user?.id;
+        const { user, error: authError } = await getCurrentUser();
+        const userId = user?.id;
 
-        if (!userId) {
+        if (authError || !userId) {
           setLoadingEngagements(false);
           return;
         }

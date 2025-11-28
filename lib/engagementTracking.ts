@@ -1,3 +1,4 @@
+import { getCurrentUser } from './authUtils';
 import { supabase } from './supabase';
 
 export type EngagementType = 'visit' | 'promotion_click' | 'favorite';
@@ -19,12 +20,12 @@ export async function recordEngagement({
   engagement,
 }: RecordEngagementParams): Promise<{ success: boolean; error?: any }> {
   try {
-    // Get authenticated user
-    const { data: userData, error: authError } = await supabase.auth.getUser();
-    const userId = userData?.user?.id;
+    // Get authenticated user (safely handles refresh token errors)
+    const { user, error: authError } = await getCurrentUser();
+    const userId = user?.id;
 
     if (authError || !userId) {
-      return { success: false, error: 'User not authenticated' };
+      return { success: false, error: authError || 'User not authenticated' };
     }
 
     // For visits and promotion clicks, check if there's a recent event (within 24 hours)
@@ -127,12 +128,12 @@ export async function recordFavorite(storeId: string): Promise<void> {
  */
 export async function unfavorite(storeId: string): Promise<{ success: boolean; error?: any }> {
   try {
-    // Get authenticated user
-    const { data: userData, error: authError } = await supabase.auth.getUser();
-    const userId = userData?.user?.id;
+    // Get authenticated user (safely handles refresh token errors)
+    const { user, error: authError } = await getCurrentUser();
+    const userId = user?.id;
 
     if (authError || !userId) {
-      return { success: false, error: 'User not authenticated' };
+      return { success: false, error: authError || 'User not authenticated' };
     }
 
     // Delete the favorite engagement event

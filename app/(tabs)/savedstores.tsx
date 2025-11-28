@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
 import StoreProfileModal, { removeSavedStoreId } from "../../components/StoreProfileModal";
+import { unfavorite } from "../../lib/engagementTracking";
 import { supabase } from "../../lib/supabase";
 
 // VerticalStoreCardWithHeart: a local wrapper that adds an inline heart button
@@ -196,15 +197,10 @@ export default function FavouritesScreen() {
         setSavedStores(prev => prev.filter(s => s.id !== store.id));
         await removeSavedStoreId(store.id);
 
-        // Delete from engagement_events table
-        const { error } = await supabase
-          .from("engagement_events")
-          .delete()
-          .eq("user_id", userId)
-          .eq("store_id", store.id)
-          .eq("engagement", "favorite");
+        // Delete from engagement_events table using the unfavorite function
+        const { success, error } = await unfavorite(store.id);
 
-        if (error) {
+        if (!success || error) {
           console.error("Error removing favorite store:", error);
           // Rollback on error
           fetchSavedStores();

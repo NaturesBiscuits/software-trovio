@@ -121,3 +121,37 @@ export async function recordFavorite(storeId: string): Promise<void> {
   await recordEngagement({ storeId, engagement: 'favorite' });
 }
 
+/**
+ * Removes a favorite action (unlike/unfavorite)
+ * Deletes the engagement event from the database
+ */
+export async function unfavorite(storeId: string): Promise<{ success: boolean; error?: any }> {
+  try {
+    // Get authenticated user
+    const { data: userData, error: authError } = await supabase.auth.getUser();
+    const userId = userData?.user?.id;
+
+    if (authError || !userId) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    // Delete the favorite engagement event
+    const { error: deleteError } = await supabase
+      .from('engagement_events')
+      .delete()
+      .eq('user_id', userId)
+      .eq('store_id', storeId)
+      .eq('engagement', 'favorite');
+
+    if (deleteError) {
+      console.error('Error removing favorite:', deleteError);
+      return { success: false, error: deleteError };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Unexpected error removing favorite:', error);
+    return { success: false, error };
+  }
+}
+

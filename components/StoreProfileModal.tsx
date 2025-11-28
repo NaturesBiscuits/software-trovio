@@ -14,7 +14,7 @@ import {
   View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { recordFavorite, recordPromotionClick, recordStoreVisit } from '../lib/engagementTracking';
+import { recordFavorite, recordPromotionClick, recordStoreVisit, unfavorite } from '../lib/engagementTracking';
 import { getCachedImageUrls } from '../lib/imageCache';
 import { supabase } from '../lib/supabase';
 import type { StoreApplication, StorePromotion } from './DiscoverFlipCard';
@@ -225,17 +225,15 @@ export default function StoreProfileModal({
       // Remove from local storage
       await removeSavedStoreId(store.id);
 
-      // Remove from engagement_events table
-      const { error: deleteError } = await supabase
-        .from('engagement_events')
-        .delete()
-        .eq('user_id', userId)
-        .eq('store_id', store.id)
-        .eq('engagement', 'favorite');
+      // Remove from engagement_events table using the unfavorite function
+      const { success, error: deleteError } = await unfavorite(store.id);
 
-      if (deleteError) {
+      if (!success || deleteError) {
         console.error('Error removing favorite store:', deleteError);
-        // No user-facing rollback here; the local state already reflects intent.
+        // Roll back optimistic update on failure
+        setIsLiked(true);
+        await addSavedStoreId(store.id);
+        alert('Failed to remove favorite. Please try again.');
       }
     }
   };

@@ -1,24 +1,22 @@
-import React, { useEffect, useState, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
+  FlatList,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
-  Image,
-  Dimensions,
-  Platform,
-  FlatList,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
+  View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { supabase } from '../lib/supabase';
+import { recordFavorite, recordPromotionClick, recordStoreVisit } from '../lib/engagementTracking';
 import { getCachedImageUrls } from '../lib/imageCache';
-import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../lib/supabase';
 import type { StoreApplication, StorePromotion } from './DiscoverFlipCard';
 import StoreRouteMap from './StoreRouteMap';
 
@@ -90,19 +88,49 @@ export default function StoreProfileModal({
   const [isLiked, setIsLiked] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
 
-  // Sync isLiked state with AsyncStorage on store change/modal open
+  // Sync isLiked state with database on store change/modal open
   useEffect(() => {
     let ignore = false;
-    if (store?.id) {
-      getSavedStoreIds().then(ids => {
-        if (!ignore) setIsLiked(ids.includes(store.id!));
-        setShowSaved(false);
-      });
+    if (store?.id && visible) {
+      const checkFavorite = async () => {
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          const userId = userData?.user?.id;
+          
+          if (!userId) {
+            if (!ignore) setIsLiked(false);
+            return;
+          }
+
+          // Check if store is favorited in engagement_events
+          const { data: favoriteRow } = await supabase
+            .from('engagement_events')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('store_id', store.id)
+            .eq('engagement', 'favorite')
+            .limit(1)
+            .maybeSingle();
+
+          if (!ignore) {
+            setIsLiked(!!favoriteRow);
+            setShowSaved(false);
+          }
+        } catch (error) {
+          console.error('Error checking favorite status:', error);
+          // Fallback to AsyncStorage check
+          getSavedStoreIds().then(ids => {
+            if (!ignore) setIsLiked(ids.includes(store.id!));
+            setShowSaved(false);
+          });
+        }
+      };
+      checkFavorite();
     }
     return () => { ignore = true; };
   }, [store?.id, visible]);
 
-  // Record a store profile view whenever a signed-in, non-owner user opens the modal
+  // Record a store visit whenever a signed-in, non-owner user opens the modal
   useEffect(() => {
     if (!visible || !store?.id || !store.user_id) {
       return;
@@ -118,7 +146,7 @@ export default function StoreProfileModal({
     }
     lastLoggedViewRef.current = { storeId: store.id, visibleAt: now };
 
-    const logProfileView = async () => {
+    const logStoreVisit = async () => {
       try {
         const { data: userData, error: authError } = await supabase.auth.getUser();
         const viewerId = userData?.user?.id;
@@ -127,26 +155,14 @@ export default function StoreProfileModal({
           return;
         }
 
-        const { data: favoriteRow } = await supabase
-          .from('user_favorite_stores')
-          .select('store_id')
-          .eq('user_id', viewerId)
-          .eq('store_id', store.id)
-          .limit(1)
-          .maybeSingle();
-
-        await supabase.from('store_profile_views').insert({
-          store_id: store.id,
-          store_owner_id: store.user_id,
-          viewed_by: viewerId,
-          is_follower: Boolean(favoriteRow),
-        });
+        // Record engagement event (visit)
+        await recordStoreVisit(store.id);
       } catch (logError) {
-        console.error('Error logging store profile view:', logError);
+        console.error('Error logging store visit:', logError);
       }
     };
 
-    logProfileView();
+    logStoreVisit();
   }, [visible, store?.id, store?.user_id]);
 
   // Handle heart-press, persist to AsyncStorage
@@ -170,16 +186,15 @@ export default function StoreProfileModal({
       // Persist locally for saved-stores screen
       await addSavedStoreId(store.id);
 
-      // Persist in Supabase favorites table
-      const { error: insertError } = await supabase
-        .from('user_favorite_stores')
-        .insert([{ user_id: userId, store_id: store.id }]);
-
-      if (insertError) {
+      // Record favorite engagement event (this handles the database insert)
+      // recordFavorite handles uniqueness constraints internally
+      try {
+        await recordFavorite(store.id);
+      } catch (error: any) {
         // If it's a uniqueness violation, we can safely ignore since the row already exists
-        const message = insertError.message || '';
+        const message = error?.message || '';
         const isUniqueViolation =
-          insertError.code === '23505' ||
+          error?.code === '23505' ||
           message.toLowerCase().includes('duplicate key') ||
           message.toLowerCase().includes('already exists');
 
@@ -194,7 +209,7 @@ export default function StoreProfileModal({
         setIsLiked(false);
         setShowSaved(false);
         await removeSavedStoreId(store.id);
-        console.error('Error saving favorite store:', insertError);
+        console.error('Error saving favorite store:', error);
         alert('Failed to save this store. Please try again.');
         return;
       }
@@ -210,11 +225,13 @@ export default function StoreProfileModal({
       // Remove from local storage
       await removeSavedStoreId(store.id);
 
-      // Remove from Supabase favorites table
+      // Remove from engagement_events table
       const { error: deleteError } = await supabase
-        .from('user_favorite_stores')
+        .from('engagement_events')
         .delete()
-        .match({ user_id: userId, store_id: store.id });
+        .eq('user_id', userId)
+        .eq('store_id', store.id)
+        .eq('engagement', 'favorite');
 
       if (deleteError) {
         console.error('Error removing favorite store:', deleteError);
@@ -265,7 +282,7 @@ export default function StoreProfileModal({
       setLoadingPromotions(true);
       try {
         const { data, error } = await supabase
-          .from<StorePromotion>('promotions')
+          .from('promotions')
           .select('*')
           .eq('store_id', store.id)
           .eq('is_active', true)
@@ -572,7 +589,15 @@ export default function StoreProfileModal({
             </Text>
           ) : (
             promotions.map((promo) => (
-              <View key={promo.id} style={styles.promotionCard}>
+              <TouchableOpacity
+                key={promo.id}
+                style={styles.promotionCard}
+                onPress={async () => {
+                  // Record promotion click engagement
+                  await recordPromotionClick(promo.id, store?.id);
+                }}
+                activeOpacity={0.7}
+              >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.promotionTitle}>{promo.title}</Text>
                   <Text style={styles.promotionBody}>{promo.description}</Text>
@@ -586,7 +611,7 @@ export default function StoreProfileModal({
                     style={styles.promotionImage}
                   />
                 ) : null}
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </View>

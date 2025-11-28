@@ -1,24 +1,24 @@
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Modal,
-  Platform,
-  Pressable,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
 } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { useRouter } from "expo-router";
+import { Path, Svg } from "react-native-svg";
 import Icon from "react-native-vector-icons/Ionicons";
-import { Svg, Path } from "react-native-svg";
 import BottomNav from "../../components/BottomNav";
-import { supabase } from "../../lib/supabase";
 import { useUserProfile } from "../../context/UserProfileContext";
+import { supabase } from "../../lib/supabase";
 
 const MONTHS = [
   "Jan",
@@ -89,6 +89,18 @@ interface DashboardStats {
   nonFollowerViews: number;
 }
 
+interface EngagementStats {
+  visits: number;
+  promotionClicks: number;
+  favorites: number;
+  period: '7days' | '30days';
+}
+
+interface StoreOption {
+  id: string | null; // null for "All Stores"
+  name: string;
+}
+
 const PRESET_PERIODS = [
   {
     label: "Last 7 Days",
@@ -142,6 +154,21 @@ export default function ProfessionalToolsScreen() {
 
   const [showCustomRange, setShowCustomRange] = useState(false);
 
+  // Store selection state
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null); // null = "All Stores"
+  const [showStorePicker, setShowStorePicker] = useState(false);
+
+  // Engagement period state
+  const [engagementPeriod, setEngagementPeriod] = useState<'7days' | '30days'>('7days');
+  const [engagementStats, setEngagementStats] = useState<EngagementStats>({
+    visits: 0,
+    promotionClicks: 0,
+    favorites: 0,
+    period: '7days',
+  });
+  const [loadingEngagements, setLoadingEngagements] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     totalStores: 0,
@@ -165,8 +192,46 @@ export default function ProfessionalToolsScreen() {
     lastScrollY.current = y;
   };
 
+  // Fetch user's stores on mount
   useEffect(() => {
-    // Refetch when startDate or endDate changes
+    const fetchStores = async () => {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const userId = userData?.user?.id;
+
+        if (!userId) return;
+
+        const { data: storesData } = await supabase
+          .from("store_applications")
+          .select("id, store_name")
+          .eq("user_id", userId)
+          .eq("status", "accepted")
+          .order("created_at", { ascending: false });
+
+        if (storesData && storesData.length > 0) {
+          const storeOptions: StoreOption[] = [
+            { id: null, name: "All Stores" },
+            ...storesData.map((s) => ({
+              id: s.id,
+              name: s.store_name || "Unnamed Store",
+            })),
+          ];
+          setStores(storeOptions);
+          // Always default to "All Stores" (total analytics)
+          setSelectedStoreId(null);
+        } else {
+          setStores([]);
+        }
+      } catch (error) {
+        console.error("Error fetching stores:", error);
+      }
+    };
+
+    fetchStores();
+  }, []);
+
+  useEffect(() => {
+    // Refetch when startDate, endDate, or selectedStoreId changes
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
@@ -178,18 +243,35 @@ export default function ProfessionalToolsScreen() {
           return;
         }
 
+        // Build query filters based on selected store
+        const storeFilter = selectedStoreId
+          ? { store_id: selectedStoreId }
+          : { user_id: userId };
+
         // Fetch stores count (not filtered by date)
-        const { data: storesData } = await supabase
+        const storesQuery = supabase
           .from("store_applications")
           .select("id")
           .eq("user_id", userId)
           .eq("status", "accepted");
 
+        if (selectedStoreId) {
+          storesQuery.eq("id", selectedStoreId);
+        }
+
+        const { data: storesData } = await storesQuery;
+
         // Fetch active promotions count (not filtered by date)
-        const { data: promotionsData } = await supabase
+        const promotionsQuery = supabase
           .from("promotions")
-          .select("id, expires_at, is_active")
+          .select("id, expires_at, is_active, store_id")
           .eq("user_id", userId);
+
+        if (selectedStoreId) {
+          promotionsQuery.eq("store_id", selectedStoreId);
+        }
+
+        const { data: promotionsData } = await promotionsQuery;
 
         const activePromos = promotionsData?.filter((p) => {
           if (!p.is_active) return false;
@@ -197,26 +279,53 @@ export default function ProfessionalToolsScreen() {
           return expiresAt > new Date();
         }) || [];
 
-        // Filter store_profile_views by timestamp inside date interval!
+        // Filter views and engagements by timestamp and store
         const startIso = startOfDay(startDate).toISOString();
         const endIso = endOfDay(endDate).toISOString();
 
-        const { data: viewRows } = await supabase
+        const storeIds = storesData?.map((s) => s.id) || [];
+
+        // Use store_profile_views for views (has is_follower field)
+        const profileViewsQuery = supabase
           .from("store_profile_views")
-          .select("is_follower, created_at")
+          .select("is_follower, store_id, created_at")
           .eq("store_owner_id", userId)
           .gte("created_at", startIso)
           .lte("created_at", endIso);
 
-        const followerViews = viewRows?.filter((row) => row.is_follower)?.length || 0;
-        const allViews = viewRows?.length || 0;
+        if (selectedStoreId) {
+          profileViewsQuery.eq("store_id", selectedStoreId);
+        } else if (storeIds.length > 0) {
+          profileViewsQuery.in("store_id", storeIds);
+        }
+
+        const { data: profileViewRows } = await profileViewsQuery;
+        const followerViews = profileViewRows?.filter((row) => row.is_follower)?.length || 0;
+        const allViews = profileViewRows?.length || 0;
         const nonFollowerViews = Math.max(allViews - followerViews, 0);
+
+        // Get total engagements (visits + promotion clicks + favorites) from engagement_events
+        const engagementsQuery = supabase
+          .from("engagement_events")
+          .select("engagement, store_id, created_at")
+          .in("engagement", ["visit", "promotion_click", "favorite"])
+          .gte("created_at", startIso)
+          .lte("created_at", endIso);
+
+        if (selectedStoreId) {
+          engagementsQuery.eq("store_id", selectedStoreId);
+        } else if (storeIds.length > 0) {
+          engagementsQuery.in("store_id", storeIds);
+        }
+
+        const { data: engagementRows } = await engagementsQuery;
+        const totalEngagements = engagementRows?.length || 0;
 
         setStats({
           totalStores: storesData?.length || 0,
           activePromotions: activePromos.length,
-          totalViews: followerViews + nonFollowerViews,
-          totalEngagements: 0, // Placeholder - would need analytics table
+          totalViews: allViews,
+          totalEngagements,
           followerViews,
           nonFollowerViews,
         });
@@ -228,7 +337,158 @@ export default function ProfessionalToolsScreen() {
     };
 
     fetchDashboardData();
-  }, [startDate, endDate]);
+  }, [startDate, endDate, selectedStoreId]);
+
+  // Fetch engagement stats separately with 7/30 day periods
+  useEffect(() => {
+    const fetchEngagementStats = async () => {
+      setLoadingEngagements(true);
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const userId = userData?.user?.id;
+
+        if (!userId) {
+          setLoadingEngagements(false);
+          return;
+        }
+
+        // Get store IDs to filter by
+        const { data: storesData } = await supabase
+          .from("store_applications")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("status", "accepted");
+
+        const storeIds = storesData?.map((s) => s.id) || [];
+        if (storeIds.length === 0) {
+          setEngagementStats({ visits: 0, promotionClicks: 0, favorites: 0, period: engagementPeriod });
+          setLoadingEngagements(false);
+          return;
+        }
+
+        // Debug: Test query to see if we have ANY engagement data for these stores (no date filter)
+        const { data: testData, error: testError } = await supabase
+          .from("engagement_events")
+          .select("engagement, store_id, created_at")
+          .in("store_id", storeIds)
+          .limit(5);
+        
+        console.log("Test query (no date filter) - any engagement data?", {
+          hasData: (testData?.length || 0) > 0,
+          count: testData?.length || 0,
+          sample: testData?.slice(0, 2),
+          error: testError,
+        });
+
+        // Calculate date range based on period
+        const now = new Date();
+        const endDate = endOfDay(now);
+        const startDate = startOfDay(new Date(now));
+        if (engagementPeriod === '7days') {
+          startDate.setDate(startDate.getDate() - 6);
+        } else {
+          startDate.setDate(startDate.getDate() - 29);
+        }
+
+        const startIso = startDate.toISOString();
+        const endIso = endDate.toISOString();
+        
+        console.log(`Fetching engagement stats:`, {
+          period: engagementPeriod,
+          startDate: startIso,
+          endDate: endIso,
+          selectedStoreId,
+          storeIdsCount: storeIds.length,
+        });
+
+        // Build query - get all engagement events for the store owner's stores
+        let query = supabase
+          .from("engagement_events")
+          .select("engagement, store_id, promotion_id, created_at")
+          .gte("created_at", startIso)
+          .lte("created_at", endIso);
+
+        if (selectedStoreId) {
+          query = query.eq("store_id", selectedStoreId);
+        } else if (storeIds.length > 0) {
+          query = query.in("store_id", storeIds);
+        } else {
+          setEngagementStats({ visits: 0, promotionClicks: 0, favorites: 0, period: engagementPeriod });
+          setLoadingEngagements(false);
+          return;
+        }
+
+        const { data: engagementRows, error: engagementError } = await query;
+
+        if (engagementError) {
+          console.error("Error fetching engagement events:", engagementError);
+          setEngagementStats({ visits: 0, promotionClicks: 0, favorites: 0, period: engagementPeriod });
+          setLoadingEngagements(false);
+          return;
+        }
+
+        // Also fetch promotion clicks that might not have store_id directly
+        // Query promotions table to get store_id for promotion clicks
+        const promotionClickEvents = engagementRows?.filter((e) => e.engagement === 'promotion_click' && !e.store_id && e.promotion_id) || [];
+        let additionalPromotionClicks: any[] = [];
+        
+        if (promotionClickEvents.length > 0) {
+          const promotionIds = promotionClickEvents.map((e) => e.promotion_id).filter(Boolean) as string[];
+          const { data: promotionsData } = await supabase
+            .from("promotions")
+            .select("id, store_id")
+            .in("id", promotionIds);
+          
+          if (promotionsData) {
+            // Filter promotions by store ownership
+            const relevantPromotions = selectedStoreId
+              ? promotionsData.filter((p) => p.store_id === selectedStoreId)
+              : promotionsData.filter((p) => p.store_id && storeIds.includes(p.store_id));
+            
+            // Count promotion clicks for these promotions
+            additionalPromotionClicks = promotionClickEvents.filter((e) => 
+              relevantPromotions.some((p) => p.id === e.promotion_id)
+            );
+          }
+        }
+
+        // Count by engagement type
+        const visits = engagementRows?.filter((e) => e.engagement === 'visit').length || 0;
+        const promotionClicksFromStoreId = engagementRows?.filter((e) => e.engagement === 'promotion_click' && e.store_id).length || 0;
+        const promotionClicks = promotionClicksFromStoreId + additionalPromotionClicks.length;
+        const favorites = engagementRows?.filter((e) => e.engagement === 'favorite').length || 0;
+
+        // Debug logging
+        console.log(`Engagement stats for ${engagementPeriod}:`, {
+          totalRows: engagementRows?.length || 0,
+          dateRange: { start: startIso, end: endIso },
+          storeFilter: selectedStoreId || `all ${storeIds.length} stores`,
+          storeIds: selectedStoreId ? [selectedStoreId] : storeIds.slice(0, 3),
+          counts: { visits, promotionClicks, favorites },
+          breakdown: {
+            visits: engagementRows?.filter((e) => e.engagement === 'visit').length || 0,
+            promotionClicksWithStoreId: promotionClicksFromStoreId,
+            promotionClicksFromPromotions: additionalPromotionClicks.length,
+            favorites: engagementRows?.filter((e) => e.engagement === 'favorite').length || 0,
+          },
+          sampleRows: engagementRows?.slice(0, 3),
+        });
+
+        setEngagementStats({
+          visits,
+          promotionClicks,
+          favorites,
+          period: engagementPeriod,
+        });
+      } catch (error) {
+        console.error("Error fetching engagement stats:", error);
+      } finally {
+        setLoadingEngagements(false);
+      }
+    };
+
+    fetchEngagementStats();
+  }, [engagementPeriod, selectedStoreId]);
 
   // Date picker logic
   const openCustomRange = () => {
@@ -457,6 +717,63 @@ export default function ProfessionalToolsScreen() {
             <Text style={styles.greetingSubtitle}>Track store performance at a glance.</Text>
           </View>
 
+          {/* Store Selector - Always show if user has stores */}
+          {stores.length > 0 && (
+            <View style={styles.storeSelectorContainer}>
+              <Text style={styles.storeSelectorLabel}>Store Analytics:</Text>
+              <TouchableOpacity
+                style={styles.storeSelectorButton}
+                onPress={() => setShowStorePicker(!showStorePicker)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.storeSelectorText}>
+                  {stores.find((s) => s.id === selectedStoreId)?.name || "All Stores"}
+                </Text>
+                <Icon
+                  name={showStorePicker ? "chevron-up" : "chevron-down"}
+                  size={18}
+                  color="#191820"
+                />
+              </TouchableOpacity>
+              {showStorePicker && (
+                <>
+                  <Pressable
+                    style={styles.storePickerOverlay}
+                    onPress={() => setShowStorePicker(false)}
+                  />
+                  <View style={styles.storePickerDropdown}>
+                    {stores.map((store) => (
+                      <TouchableOpacity
+                        key={store.id || "all"}
+                        style={[
+                          styles.storePickerItem,
+                          selectedStoreId === store.id && styles.storePickerItemActive,
+                        ]}
+                        onPress={() => {
+                          setSelectedStoreId(store.id);
+                          setShowStorePicker(false);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.storePickerItemText,
+                            selectedStoreId === store.id && styles.storePickerItemTextActive,
+                          ]}
+                        >
+                          {store.name}
+                        </Text>
+                        {selectedStoreId === store.id && (
+                          <Icon name="checkmark" size={18} color="#191820" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+            </View>
+          )}
+
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionTitle}>Insights</Text>
@@ -620,6 +937,87 @@ export default function ProfessionalToolsScreen() {
               icon="heart"
               color="#e91e63"
             />
+          </View>
+
+          {/* Engagement Metrics Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Engagement Metrics</Text>
+              <View style={styles.engagementPeriodButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.engagementPeriodButton,
+                    engagementPeriod === '7days' && styles.engagementPeriodButtonActive,
+                  ]}
+                  onPress={() => setEngagementPeriod('7days')}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.engagementPeriodButtonText,
+                      engagementPeriod === '7days' && styles.engagementPeriodButtonTextActive,
+                    ]}
+                  >
+                    7 Days
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.engagementPeriodButton,
+                    engagementPeriod === '30days' && styles.engagementPeriodButtonActive,
+                  ]}
+                  onPress={() => setEngagementPeriod('30days')}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.engagementPeriodButtonText,
+                      engagementPeriod === '30days' && styles.engagementPeriodButtonTextActive,
+                    ]}
+                  >
+                    30 Days
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {loadingEngagements ? (
+              <View style={styles.engagementLoadingContainer}>
+                <ActivityIndicator size="small" color="#191820" />
+              </View>
+            ) : (
+              <View style={styles.engagementCard}>
+                <View style={styles.engagementRow}>
+                  <View style={[styles.engagementIconContainer, { backgroundColor: '#468dff15' }]}>
+                    <Icon name="eye-outline" size={24} color="#468dff" />
+                  </View>
+                  <View style={styles.engagementContent}>
+                    <Text style={styles.engagementLabel}>Store Visits</Text>
+                    <Text style={styles.engagementValue}>{engagementStats.visits.toLocaleString()}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.engagementRow}>
+                  <View style={[styles.engagementIconContainer, { backgroundColor: '#4caf5015' }]}>
+                    <Icon name="megaphone-outline" size={24} color="#4caf50" />
+                  </View>
+                  <View style={styles.engagementContent}>
+                    <Text style={styles.engagementLabel}>Promotion Clicks</Text>
+                    <Text style={styles.engagementValue}>{engagementStats.promotionClicks.toLocaleString()}</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.engagementRow, { marginBottom: 0 }]}>
+                  <View style={[styles.engagementIconContainer, { backgroundColor: '#e91e6315' }]}>
+                    <Icon name="heart" size={24} color="#e91e63" />
+                  </View>
+                  <View style={styles.engagementContent}>
+                    <Text style={styles.engagementLabel}>Favorites</Text>
+                    <Text style={styles.engagementValue}>{engagementStats.favorites.toLocaleString()}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
 
           <View style={styles.section}>
@@ -1054,5 +1452,137 @@ const styles = StyleSheet.create({
     color: "#555",
     lineHeight: 20,
     marginLeft: 12,
+  },
+  engagementPeriodButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  engagementPeriodButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "#f1f2f5",
+  },
+  engagementPeriodButtonActive: {
+    backgroundColor: "#191820",
+  },
+  engagementPeriodButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#191820",
+  },
+  engagementPeriodButtonTextActive: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  engagementLoadingContainer: {
+    padding: 20,
+    alignItems: "center",
+  },
+  engagementCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 20,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#ecedf2",
+  },
+  engagementRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  engagementIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+  engagementContent: {
+    flex: 1,
+  },
+  engagementLabel: {
+    fontSize: 14,
+    color: "#8f92a1",
+    marginBottom: 4,
+  },
+  engagementValue: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#191820",
+  },
+  storeSelectorContainer: {
+    marginBottom: 20,
+    position: "relative",
+    zIndex: 10,
+  },
+  storePickerOverlay: {
+    position: "absolute",
+    top: 0,
+    left: -20,
+    right: -20,
+    bottom: -1000,
+    zIndex: 1,
+  },
+  storeSelectorLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#191820",
+    marginBottom: 8,
+  },
+  storeSelectorButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "#ecedf2",
+  },
+  storeSelectorText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#191820",
+  },
+  storePickerDropdown: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#ecedf2",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+    maxHeight: 200,
+    zIndex: 1000,
+  },
+  storePickerItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f4f4f6",
+  },
+  storePickerItemActive: {
+    backgroundColor: "#f7f7fb",
+  },
+  storePickerItemText: {
+    fontSize: 15,
+    color: "#191820",
+  },
+  storePickerItemTextActive: {
+    fontWeight: "700",
   },
 });

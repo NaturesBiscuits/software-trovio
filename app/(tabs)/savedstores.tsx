@@ -1,11 +1,11 @@
-import * as Location from "expo-location";
-import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import { supabase } from "../../lib/supabase";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
 import StoreProfileModal, { removeSavedStoreId } from "../../components/StoreProfileModal";
+import { supabase } from "../../lib/supabase";
 
 // VerticalStoreCardWithHeart: a local wrapper that adds an inline heart button
 function VerticalStoreCardWithHeart({ store, onPress, onUnfavorite }: {
@@ -49,7 +49,6 @@ function VerticalStoreCardWithHeart({ store, onPress, onUnfavorite }: {
 }
 
 // A small local helper to render only the image area of VerticalStoreCard, in order to preserve image loading logic.
-import OriginalVerticalStoreCard from "../../components/VerticalStoreCard";
 function VerticalStoreCardOnlyImage({ store }: { store: StoreApplication }) {
   // This component renders only the image/placeholder part from VerticalStoreCard
   // To keep code DRY and avoid duplicating all the image loading logic, you can either
@@ -126,10 +125,13 @@ export default function FavouritesScreen() {
         setLoading(false);
         return;
       }
+      
+      // Fetch favorites from engagement_events table
       const { data: favorites, error: favError } = await supabase
-        .from("user_favorite_stores")
+        .from("engagement_events")
         .select("store_id")
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .eq("engagement", "favorite");
 
       if (favError || !favorites || favorites.length === 0) {
         setSavedStores([]);
@@ -137,7 +139,13 @@ export default function FavouritesScreen() {
         return;
       }
 
-      const ids = favorites.map(f => f.store_id);
+      const ids = favorites.map(f => f.store_id).filter(Boolean) as string[];
+
+      if (ids.length === 0) {
+        setSavedStores([]);
+        setLoading(false);
+        return;
+      }
 
       const { data, error } = await supabase
         .from("store_applications")
@@ -147,6 +155,7 @@ export default function FavouritesScreen() {
       if (error) throw error;
 
       const dataOrEmpty = data || [];
+      // Maintain order based on when they were favorited (most recent first)
       const ordered = ids
         .map(id => dataOrEmpty.find(d => d.id === id))
         .filter(Boolean) as StoreApplication[];
@@ -182,20 +191,28 @@ export default function FavouritesScreen() {
         if (userError || !userId) {
           return;
         }
+        
+        // Optimistic update
         setSavedStores(prev => prev.filter(s => s.id !== store.id));
         await removeSavedStoreId(store.id);
 
+        // Delete from engagement_events table
         const { error } = await supabase
-          .from("user_favorite_stores")
+          .from("engagement_events")
           .delete()
-          .match({ user_id: userId, store_id: store.id });
+          .eq("user_id", userId)
+          .eq("store_id", store.id)
+          .eq("engagement", "favorite");
 
         if (error) {
           console.error("Error removing favorite store:", error);
+          // Rollback on error
           fetchSavedStores();
         }
       } catch (e) {
         console.error("Error in handleUnfavorite:", e);
+        // Rollback on error
+        fetchSavedStores();
       }
     },
     [fetchSavedStores]

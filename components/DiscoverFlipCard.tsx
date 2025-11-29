@@ -12,7 +12,7 @@ import {
 import { Image } from 'expo-image';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getCachedImageUrl, getCachedImageUrls } from '../lib/imageCache';
-
+import { recordPromotionClick } from '../lib/engagementTracking';
 export type StorePromotion = {
   id: string;
   store_id: string;
@@ -368,8 +368,21 @@ export default React.memo(function DiscoverFlipCard({
             <Text style={styles.navButtonText}>Navigate</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() => onViewProfile?.(item)}
+          style={styles.profileButton}
+          onPress={async () => {
+            // Open the store profile as before
+            onViewProfile?.(item);
+
+            // If there is an active promotion that hasn't expired yet,
+            // count this as a promotion click for analytics.
+            const promo = item.activePromotion;
+            if (promo?.id && promo.is_active !== false && promo.expires_at) {
+              const expires = new Date(promo.expires_at);
+              if (!Number.isNaN(expires.getTime()) && expires.getTime() > Date.now()) {
+                await recordPromotionClick(promo.id, item.id);
+              }
+            }
+          }}
           >
             <Icon name="storefront-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
             <Text style={styles.navButtonText}>View Store</Text>

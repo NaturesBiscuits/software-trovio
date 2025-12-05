@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -6,13 +7,11 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
-  Dimensions,
+  View
 } from 'react-native';
-import { Image } from 'expo-image';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { getCachedImageUrl, getCachedImageUrls } from '../lib/imageCache';
 import { recordPromotionClick } from '../lib/engagementTracking';
+import { getCachedImageUrl, getCachedImageUrls } from '../lib/imageCache';
 export type StorePromotion = {
   id: string;
   store_id: string;

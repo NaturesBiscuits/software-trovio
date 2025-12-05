@@ -67,22 +67,24 @@ const useLocationTracker = () => {
   return { userCoords, hasLocPerm };
 };
 
-const useStoreFeed = () => {
-  const [stores, setStores] = useState<StoreApplication[]>([]);
+// Separate hooks for Discover and For You sections with different ordering
+const useDiscoverStores = () => {
+  const [discoverStores, setDiscoverStores] = useState<StoreApplication[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchStores = async () => {
       setLoading(true);
       try {
+        // Discover section ordering - you can change this to use your algorithm
         const { data, error } = await supabase
           .from('store_applications')
           .select('*')
           .eq('status', 'accepted')
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false }); // TODO: Replace with Discover algorithm ordering
 
         if (error || !data) {
-          setStores([]);
+          setDiscoverStores([]);
           return;
         }
 
@@ -113,7 +115,7 @@ const useStoreFeed = () => {
           }
         }
 
-        setStores(fetchedStores);
+        setDiscoverStores(fetchedStores);
       } finally {
         setLoading(false);
       }
@@ -121,7 +123,65 @@ const useStoreFeed = () => {
     fetchStores();
   }, []);
 
-  return { stores, loading };
+  return { discoverStores, loading };
+};
+
+const useForYouStores = () => {
+  const [forYouStores, setForYouStores] = useState<StoreApplication[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStores = async () => {
+      setLoading(true);
+      try {
+        // For You section ordering - you can change this to use your algorithm
+        const { data, error } = await supabase
+          .from('store_applications')
+          .select('*')
+          .eq('status', 'accepted')
+          .order('created_at', { ascending: false }); // TODO: Replace with For You algorithm ordering
+
+        if (error || !data) {
+          setForYouStores([]);
+          return;
+        }
+
+        let fetchedStores = data as StoreApplication[];
+        const storeIds = fetchedStores.map((store) => store.id).filter(Boolean);
+
+        if (storeIds.length > 0) {
+          const { data: promotionsData, error: promotionsError } = await supabase
+            .from('promotions')
+            .select('*')
+            .in('store_id', storeIds)
+            .eq('is_active', true)
+            .gt('expires_at', new Date().toISOString())
+            .order('expires_at', { ascending: true });
+
+          if (!promotionsError && promotionsData) {
+            const promotionByStore = new Map<string, StorePromotion>();
+            (promotionsData as StorePromotion[]).forEach((promo) => {
+              if (!promotionByStore.has(promo.store_id)) {
+                promotionByStore.set(promo.store_id, promo);
+              }
+            });
+
+            fetchedStores = fetchedStores.map((store) => ({
+              ...store,
+              activePromotion: promotionByStore.get(store.id) || null,
+            }));
+          }
+        }
+
+        setForYouStores(fetchedStores);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStores();
+  }, []);
+
+  return { forYouStores, loading };
 };
 
 // ---------------------------------------------------------
@@ -291,13 +351,21 @@ export default function HomeScreen() {
 
   // Custom Hooks
   const { userCoords, hasLocPerm } = useLocationTracker();
-  const { stores, loading } = useStoreFeed();
+  const { discoverStores, loading: discoverLoading } = useDiscoverStores();
+  const { forYouStores, loading: forYouLoading } = useForYouStores();
 
-  // Filter out user's own stores
-  const filteredStores = useMemo(() => {
-    if (!userProfile?.id) return stores;
-    return stores.filter(store => store.user_id !== userProfile.id);
-  }, [stores, userProfile?.id]);
+  // Filter out user's own stores for each section
+  const filteredDiscoverStores = useMemo(() => {
+    if (!userProfile?.id) return discoverStores;
+    return discoverStores.filter(store => store.user_id !== userProfile.id);
+  }, [discoverStores, userProfile?.id]);
+
+  const filteredForYouStores = useMemo(() => {
+    if (!userProfile?.id) return forYouStores;
+    return forYouStores.filter(store => store.user_id !== userProfile.id);
+  }, [forYouStores, userProfile?.id]);
+
+  const loading = discoverLoading || forYouLoading;
 
   // State
   const [flippedCardIndex, setFlippedCardIndex] = useState<number | null>(null);
@@ -479,10 +547,10 @@ export default function HomeScreen() {
         ) : (
           <>
             <Text style={styles.sectionHeader}>Discover</Text>
-            {filteredStores.length > 0 ? (
+            {filteredDiscoverStores.length > 0 ? (
               <FlatList
                 horizontal
-                data={filteredStores}
+                data={filteredDiscoverStores}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}
                 keyExtractor={(item) => item.id}
@@ -493,7 +561,7 @@ export default function HomeScreen() {
             )}
 
             <Text style={styles.sectionHeader}>For you</Text>
-            {filteredStores.map((item) => renderForYouCard(item))}
+            {filteredForYouStores.map((item) => renderForYouCard(item))}
           </>
         )}
       </ScrollView>

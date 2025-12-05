@@ -1,24 +1,26 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
-  FlatList,
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  Image,
+  Dimensions,
+  FlatList,
+  Animated,
+  Easing,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { recordFavorite, recordPromotionClick, recordStoreVisit, unfavorite } from '../lib/engagementTracking';
-import { getCachedImageUrls } from '../lib/imageCache';
 import { supabase } from '../lib/supabase';
+import { getCachedImageUrls } from '../lib/imageCache';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StoreApplication, StorePromotion } from './DiscoverFlipCard';
 import StoreRouteMap from './StoreRouteMap';
+import { recordEngagement, unfavorite } from '../lib/engagementTracking';
 
 const { width: deviceWidth } = Dimensions.get('window');
 const PLACEHOLDER_WIDTH = Math.min(350, deviceWidth - 40);
@@ -88,49 +90,90 @@ export default function StoreProfileModal({
   const [isLiked, setIsLiked] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
 
-  // Sync isLiked state with database on store change/modal open
+  // Animation values
+  const modalOpacity = useRef(new Animated.Value(0)).current;
+  const modalTranslateY = useRef(new Animated.Value(50)).current;
+  const heartScale = useRef(new Animated.Value(1)).current;
+  const savedMessageOpacity = useRef(new Animated.Value(0)).current;
+  const imageOpacity = useRef(new Animated.Value(0)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+
+  // Animate modal entrance/exit
+  useEffect(() => {
+    if (visible) {
+      // Reset and animate in
+      modalOpacity.setValue(0);
+      modalTranslateY.setValue(50);
+      cardOpacity.setValue(0);
+      imageOpacity.setValue(0);
+      
+      Animated.parallel([
+        Animated.timing(modalOpacity, {
+          toValue: 1,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(modalTranslateY, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(cardOpacity, {
+          toValue: 1,
+          duration: 400,
+          delay: 100,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      // Animate out
+      Animated.parallel([
+        Animated.timing(modalOpacity, {
+          toValue: 0,
+          duration: 200,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(modalTranslateY, {
+          toValue: 50,
+          duration: 200,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible]);
+
+  // Animate image fade-in when photos load
+  useEffect(() => {
+    if (photoUrls.length > 0 && !loadingPhotos) {
+      imageOpacity.setValue(0);
+      Animated.timing(imageOpacity, {
+        toValue: 1,
+        duration: 400,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [photoUrls.length, loadingPhotos]);
+
+  // Sync isLiked state with AsyncStorage on store change/modal open
   useEffect(() => {
     let ignore = false;
-    if (store?.id && visible) {
-      const checkFavorite = async () => {
-        try {
-          const { data: userData } = await supabase.auth.getUser();
-          const userId = userData?.user?.id;
-          
-          if (!userId) {
-            if (!ignore) setIsLiked(false);
-            return;
-          }
-
-          // Check if store is favorited in engagement_events
-          const { data: favoriteRow } = await supabase
-            .from('engagement_events')
-            .select('id')
-            .eq('user_id', userId)
-            .eq('store_id', store.id)
-            .eq('engagement', 'favorite')
-            .limit(1)
-            .maybeSingle();
-
-          if (!ignore) {
-            setIsLiked(!!favoriteRow);
-            setShowSaved(false);
-          }
-        } catch (error) {
-          console.error('Error checking favorite status:', error);
-          // Fallback to AsyncStorage check
-          getSavedStoreIds().then(ids => {
-            if (!ignore) setIsLiked(ids.includes(store.id!));
-            setShowSaved(false);
-          });
-        }
-      };
-      checkFavorite();
+    if (store?.id) {
+      getSavedStoreIds().then(ids => {
+        if (!ignore) setIsLiked(ids.includes(store.id!));
+        setShowSaved(false);
+        savedMessageOpacity.setValue(0);
+      });
     }
     return () => { ignore = true; };
   }, [store?.id, visible]);
 
-  // Record a store visit whenever a signed-in, non-owner user opens the modal
+  // Record a store profile view whenever a signed-in, non-owner user opens the modal
   useEffect(() => {
     if (!visible || !store?.id || !store.user_id) {
       return;
@@ -146,7 +189,7 @@ export default function StoreProfileModal({
     }
     lastLoggedViewRef.current = { storeId: store.id, visibleAt: now };
 
-    const logStoreVisit = async () => {
+    const logProfileView = async () => {
       try {
         const { data: userData, error: authError } = await supabase.auth.getUser();
         const viewerId = userData?.user?.id;
@@ -155,19 +198,48 @@ export default function StoreProfileModal({
           return;
         }
 
-        // Record engagement event (visit)
-        await recordStoreVisit(store.id);
+        const { data: favoriteRow } = await supabase
+          .from('engagement_events')
+          .select('id')
+          .eq('user_id', viewerId)
+          .eq('store_id', store.id)
+          .eq('engagement', 'favorite')
+          .limit(1)
+          .maybeSingle();
+
+        await supabase.from('store_profile_views').insert({
+          store_id: store.id,
+          store_owner_id: store.user_id,
+          viewed_by: viewerId,
+          is_follower: Boolean(favoriteRow),
+        });
       } catch (logError) {
-        console.error('Error logging store visit:', logError);
+        console.error('Error logging store profile view:', logError);
       }
     };
 
-    logStoreVisit();
+    logProfileView();
   }, [visible, store?.id, store?.user_id]);
 
   // Handle heart-press, persist to AsyncStorage
   const handleHeartPress = async () => {
     if (!store?.id) return;
+
+    // Animate heart press
+    Animated.sequence([
+      Animated.timing(heartScale, {
+        toValue: 1.3,
+        duration: 150,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.timing(heartScale, {
+        toValue: 1,
+        duration: 150,
+        easing: Easing.in(Easing.ease),
+        useNativeDriver: true,
+      }),
+    ]).start();
 
     // Ensure we have an authenticated user
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -183,57 +255,58 @@ export default function StoreProfileModal({
       setIsLiked(true);
       setShowSaved(true);
 
+      // Animate saved message
+      savedMessageOpacity.setValue(0);
+      Animated.timing(savedMessageOpacity, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+
       // Persist locally for saved-stores screen
       await addSavedStoreId(store.id);
 
-      // Record favorite engagement event (this handles the database insert)
-      // recordFavorite handles uniqueness constraints internally
-      try {
-        await recordFavorite(store.id);
-      } catch (error: any) {
-        // If it's a uniqueness violation, we can safely ignore since the row already exists
-        const message = error?.message || '';
-        const isUniqueViolation =
-          error?.code === '23505' ||
-          message.toLowerCase().includes('duplicate key') ||
-          message.toLowerCase().includes('already exists');
+      // Persist in Supabase using engagement_events table
+      const { success, error: insertError } = await recordEngagement({
+        storeId: store.id,
+        engagement: 'favorite',
+      });
 
-        if (isUniqueViolation) {
-          setTimeout(() => {
-            setShowSaved(false);
-          }, 2000);
-          return;
-        }
-
+      if (!success) {
         // Roll back optimistic update on failure
         setIsLiked(false);
         setShowSaved(false);
+        savedMessageOpacity.setValue(0);
         await removeSavedStoreId(store.id);
-        console.error('Error saving favorite store:', error);
+        console.error('Error saving favorite store:', insertError);
         alert('Failed to save this store. Please try again.');
         return;
       }
 
       setTimeout(() => {
-        setShowSaved(false);
+        Animated.timing(savedMessageOpacity, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.in(Easing.ease),
+          useNativeDriver: true,
+        }).start(() => setShowSaved(false));
       }, 2000);
     } else {
       // Unfavorite
       setIsLiked(false);
       setShowSaved(false);
+      savedMessageOpacity.setValue(0);
 
       // Remove from local storage
       await removeSavedStoreId(store.id);
 
-      // Remove from engagement_events table using the unfavorite function
+      // Remove from Supabase using engagement_events table
       const { success, error: deleteError } = await unfavorite(store.id);
 
-      if (!success || deleteError) {
+      if (!success && deleteError) {
         console.error('Error removing favorite store:', deleteError);
-        // Roll back optimistic update on failure
-        setIsLiked(true);
-        await addSavedStoreId(store.id);
-        alert('Failed to remove favorite. Please try again.');
+        // No user-facing rollback here; the local state already reflects intent.
       }
     }
   };
@@ -422,17 +495,33 @@ export default function StoreProfileModal({
 
   const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 60 });
 
-  // For arrow button navigation (not used anymore)
-  // const scrollToIndex = (idx: number) => {
-  //   setCarouselIndex(idx);
-  //   flatListRef.current?.scrollToIndex({ index: idx, animated: true });
-  // };
-
   if (!store) return null;
 
+  const modalAnimatedStyle = {
+    opacity: modalOpacity,
+    transform: [{ translateY: modalTranslateY }],
+  };
+
+  const heartAnimatedStyle = {
+    transform: [{ scale: heartScale }],
+  };
+
+  const savedMessageAnimatedStyle = {
+    opacity: savedMessageOpacity,
+  };
+
+  const cardAnimatedStyle = {
+    opacity: cardOpacity,
+  };
+
+  const imageAnimatedStyle = {
+    opacity: imageOpacity,
+  };
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose} transparent={false}>
-      <View style={styles.header}>
+    <Modal visible={visible} animationType="none" onRequestClose={onClose} transparent={false}>
+      <Animated.View style={[styles.modalContainer, modalAnimatedStyle]}>
+        <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
           <Icon name="close" size={24} color="#000" />
         </TouchableOpacity>
@@ -445,7 +534,7 @@ export default function StoreProfileModal({
           {loadingPhotos ? (
             <ActivityIndicator style={{ marginTop: 16 }} />
           ) : photoUrls.length > 0 ? (
-            <View style={styles.carouselContainerNoBG}>
+            <Animated.View style={[styles.carouselContainerNoBG, imageAnimatedStyle]}>
               {/* Swipeable Carousel using FlatList */}
               <FlatList
                 data={photoUrls}
@@ -491,9 +580,11 @@ export default function StoreProfileModal({
                 })}
                 style={styles.carouselScrollNoBG}
                 contentContainerStyle={{ alignItems: 'center' }}
+                decelerationRate="fast"
+                snapToInterval={PLACEHOLDER_WIDTH}
+                snapToAlignment="center"
               />
-              {/* Arrows removed */}
-            </View>
+            </Animated.View>
           ) : (
             <View style={styles.photoPlaceholderContainer}>
               <Icon name="image-outline" size={52} color="#bbb" />
@@ -517,7 +608,7 @@ export default function StoreProfileModal({
         </View>
 
         {/* Unified Info Card for Description, Address, Tags, and Map */}
-        <View style={styles.infoCard}>
+        <Animated.View style={[styles.infoCard, cardAnimatedStyle]}>
           {/* Heart button + description */}
           <View style={styles.descriptionRow}>
             <Text style={styles.sectionTitle}>Description</Text>
@@ -528,14 +619,18 @@ export default function StoreProfileModal({
               activeOpacity={0.7}
               testID="description-heart"
             >
-              <Icon
-                name={isLiked ? 'heart' : 'heart-outline'}
-                size={24}
-                color={isLiked ? 'red' : '#aaa'}
-              />
+              <Animated.View style={heartAnimatedStyle}>
+                <Icon
+                  name={isLiked ? 'heart' : 'heart-outline'}
+                  size={24}
+                  color={isLiked ? 'red' : '#aaa'}
+                />
+              </Animated.View>
             </TouchableOpacity>
             {isLiked && showSaved && (
-              <Text style={styles.savedMessage}>Saved</Text>
+              <Animated.View style={savedMessageAnimatedStyle}>
+                <Text style={styles.savedMessage}>Saved</Text>
+              </Animated.View>
             )}
           </View>
           <Text style={styles.descriptionText}>
@@ -572,10 +667,10 @@ export default function StoreProfileModal({
           ) : (
             <Text style={styles.emptyText}>Location unavailable.</Text>
           )}
-        </View>
+        </Animated.View>
 
         {/* Current Promotions Container */}
-        <View style={styles.promotionsCard}>
+        <Animated.View style={[styles.promotionsCard, cardAnimatedStyle]}>
           <View style={styles.promotionsHeader}>
             <Text style={styles.promotionsTitle}>Current Promotions</Text>
             {loadingPromotions && <ActivityIndicator size="small" color="#4f63d2" />}
@@ -587,15 +682,7 @@ export default function StoreProfileModal({
             </Text>
           ) : (
             promotions.map((promo) => (
-              <TouchableOpacity
-                key={promo.id}
-                style={styles.promotionCard}
-                onPress={async () => {
-                  // Record promotion click engagement
-                  await recordPromotionClick(promo.id, store?.id);
-                }}
-                activeOpacity={0.7}
-              >
+              <View key={promo.id} style={styles.promotionCard}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.promotionTitle}>{promo.title}</Text>
                   <Text style={styles.promotionBody}>{promo.description}</Text>
@@ -609,17 +696,22 @@ export default function StoreProfileModal({
                     style={styles.promotionImage}
                   />
                 ) : null}
-              </TouchableOpacity>
+              </View>
             ))
           )}
-        </View>
+        </Animated.View>
       </ScrollView>
+      </Animated.View>
     </Modal>
   );
 }
 
 // @ts-ignore: PLACEHOLDER_WIDTH may not be a static value for StyleSheet -- safe in practice
 const styles = StyleSheet.create({
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
   header: {
     backgroundColor: '#fff',
     paddingTop: 50,
@@ -684,7 +776,6 @@ const styles = StyleSheet.create({
     width: PLACEHOLDER_WIDTH,
     height: PLACEHOLDER_HEIGHT,
     borderRadius: 16,
-    // No backgroundColor, remove box
   },
   carouselImageWrapperNoBG: {
     alignItems: 'center',
@@ -692,7 +783,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginRight: 0,
     borderRadius: 16,
-    // No backgroundColor, remove box
     position: 'relative',
   },
   carouselImage: {
@@ -709,18 +799,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     zIndex: 5,
-  },
-  arrowsContainer: {
-    // Removed arrow buttons, keep style for legacy
-    display: 'none',
-  },
-  arrowButton: {
-    // Remove arrow button style
-    display: 'none',
-  },
-  dotsContainer: {
-    // Not used anymore, but kept for compatibility
-    display: 'none',
   },
   dotSmallWhite: {
     width: 6,
@@ -741,9 +819,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
     marginTop: 8,
-    // No background box
   },
-  // Removed photoPlaceholder style: no box behind
   placeholderText: {
     marginTop: 12,
     fontSize: 16,

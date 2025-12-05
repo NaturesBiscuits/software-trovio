@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import BottomNav from "../../components/BottomNav";
 import { supabase } from "../../lib/supabase";
+import { useNotifications } from "../../context/NotificationContext";
 
 type PromotionNotification = {
   id: string;
@@ -27,6 +28,7 @@ export default function NotificationScreen() {
   const [notifications, setNotifications] = useState<PromotionNotification[]>([]);
   const [savedStoreIds, setSavedStoreIds] = useState<string[]>([]);
   const [storeNameMap, setStoreNameMap] = useState<Record<string, string>>({});
+  const { markNotificationsAsRead } = useNotifications();
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -41,9 +43,11 @@ export default function NotificationScreen() {
       }
 
       const { data: favorites, error: favoritesError } = await supabase
-        .from("user_favorite_stores")
+        .from("engagement_events")
         .select("store_id")
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .eq("engagement", "favorite")
+        .not("store_id", "is", null);
 
       if (favoritesError || !favorites || favorites.length === 0) {
         setNotifications([]);
@@ -52,7 +56,7 @@ export default function NotificationScreen() {
         return;
       }
 
-      const ids = favorites.map((fav) => fav.store_id);
+      const ids = favorites.map((fav) => fav.store_id).filter(Boolean) as string[];
       setSavedStoreIds(ids);
 
       const [{ data: promos, error: promosError }, { data: stores, error: storesError }] =
@@ -61,6 +65,8 @@ export default function NotificationScreen() {
             .from("promotions")
             .select("*")
             .in("store_id", ids)
+            .eq("is_active", true)
+            .gt("expires_at", new Date().toISOString())
             .order("created_at", { ascending: false }),
           supabase
             .from("store_applications")
@@ -107,6 +113,11 @@ export default function NotificationScreen() {
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
+
+  // Mark notifications as read when the screen is viewed
+  useEffect(() => {
+    markNotificationsAsRead();
+  }, [markNotificationsAsRead]);
 
   useEffect(() => {
     if (savedStoreIds.length === 0) return;
@@ -159,17 +170,24 @@ export default function NotificationScreen() {
       createdDate = "";
     }
 
+    // Photo on left, circular, placeholder if no image
     return (
       <View style={styles.notificationCard}>
+        <View style={styles.notificationImageWrapper}>
+          {item.image_url ? (
+            <Image source={{ uri: item.image_url }} style={styles.notificationImageCircular} />
+          ) : (
+            <View style={styles.notificationImageCircularPlaceholder}>
+              <Text style={styles.placeholderIcon}>🎁</Text>
+            </View>
+          )}
+        </View>
         <View style={styles.notificationInfo}>
           <Text style={styles.notificationTitle}>{item.title}</Text>
           <Text style={styles.notificationStore}>{item.store_name}</Text>
           <Text style={styles.notificationDescription}>{item.description}</Text>
           <Text style={styles.notificationDate}>{createdDate}</Text>
         </View>
-        {item.image_url ? (
-          <Image source={{ uri: item.image_url }} style={styles.notificationImage} />
-        ) : null}
       </View>
     );
   }, []);
@@ -270,6 +288,36 @@ const styles = StyleSheet.create({
     gap: 14,
     borderWidth: 1,
     borderColor: "#ebedf3",
+    alignItems: "center",
+  },
+  notificationImageWrapper: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 58,
+    height: 58,
+    marginRight: 12,
+  },
+  notificationImageCircular: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#d9d9d9",
+    resizeMode: "cover",
+    borderWidth: 1,
+    borderColor: "#e7e7e7",
+  },
+  notificationImageCircularPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#e3e6ee",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#e7e7e7",
+  },
+  placeholderIcon: {
+    fontSize: 28,
   },
   notificationInfo: {
     flex: 1,
@@ -294,11 +342,5 @@ const styles = StyleSheet.create({
   notificationDate: {
     fontSize: 12,
     color: "#9a9a9c",
-  },
-  notificationImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 12,
-    backgroundColor: "#d9d9d9",
   },
 });

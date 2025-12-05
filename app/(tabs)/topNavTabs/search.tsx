@@ -19,6 +19,7 @@ import Icon from "react-native-vector-icons/Ionicons";
 import BottomNav from "../../../components/BottomNav";
 import { supabase } from "../../../lib/supabase";
 import { useNavigation } from "@react-navigation/native";
+import StoreProfileModal from "../../../components/StoreProfileModal";
 
 // --- Type Definitions ---
 interface StoreApplication {
@@ -45,6 +46,8 @@ type TagItem = { id: string; name: string };
 // --- Constants ---
 const RECENTS_STORAGE_KEY = "recent-searches-topnavtabs";
 const MAX_RECENT_SEARCHES = 6;
+const RECENT_STORES_STORAGE_KEY = "recent-stores-topnavtabs";
+const MAX_RECENT_STORES = 6;
 
 const ANDROID_STATUSBAR_HEIGHT = StatusBar.currentHeight ?? 0;
 const TOP_INSET = Platform.OS === "ios" ? 24 : ANDROID_STATUSBAR_HEIGHT;
@@ -66,7 +69,9 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(true);
   const [tagsLoading, setTagsLoading] = useState(true);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [recentStores, setRecentStores] = useState<StoreApplication[]>([]);
   const [isSearchActive, setIsSearchActive] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<StoreApplication | null>(null);
 
   // Side Panel
   const [isTagPanelOpen, setIsTagPanelOpen] = useState(false);
@@ -86,6 +91,37 @@ export default function SearchScreen() {
     } catch (e) {
       console.error("Error saving recent searches:", e);
     }
+  };
+
+  const saveRecentStores = async (recentStoresList: StoreApplication[]) => {
+    try {
+      // Store only the IDs and essential data to save space
+      const storesToSave = recentStoresList.map(store => ({
+        id: store.id,
+        store_name: store.store_name,
+        address: store.address,
+        photos_url: store.photos_url,
+        user_id: store.user_id,
+        description: store.description,
+        tags: store.tags,
+        latitude: store.latitude,
+        longitude: store.longitude,
+      }));
+      await AsyncStorage.setItem(RECENT_STORES_STORAGE_KEY, JSON.stringify(storesToSave));
+    } catch (e) {
+      console.error("Error saving recent stores:", e);
+    }
+  };
+
+  const addRecentStore = (store: StoreApplication) => {
+    setRecentStores((prev) => {
+      // Remove if already exists
+      const filtered = prev.filter((s) => s.id !== store.id);
+      // Add to beginning and limit to MAX_RECENT_STORES
+      const next = [store, ...filtered].slice(0, MAX_RECENT_STORES);
+      saveRecentStores(next);
+      return next;
+    });
   };
 
   const handleSearchSubmit = () => {
@@ -154,6 +190,21 @@ export default function SearchScreen() {
       }
     };
     loadRecents();
+  }, []);
+
+  useEffect(() => {
+    const loadRecentStores = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(RECENT_STORES_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as StoreApplication[];
+          setRecentStores(parsed);
+        }
+      } catch (e) {
+        console.error("Error loading recent stores:", e);
+      }
+    };
+    loadRecentStores();
   }, []);
 
   useEffect(() => {
@@ -262,8 +313,8 @@ export default function SearchScreen() {
         key={store.id}
         style={styles.storeCard}
         onPress={() => {
-            // Add navigation logic here if applicable, e.g.,
-            // navigation.navigate("StoreDetail", { storeId: store.id });
+          setSelectedStore(store);
+          addRecentStore(store);
         }}
       >
         {photoUrl ? (
@@ -522,11 +573,74 @@ export default function SearchScreen() {
           </View>
         )}
 
+        {/* Recently Viewed Stores */}
+        {recentStores.length > 0 && !isSearchActive && (
+          <View style={styles.recentStoresSection}>
+            <View style={styles.recentsHeader}>
+              <Text style={styles.recentsLabel}>Recently viewed</Text>
+              <TouchableOpacity onPress={() => {
+                setRecentStores([]);
+                AsyncStorage.removeItem(RECENT_STORES_STORAGE_KEY);
+              }} style={styles.clearRecentsButton}>
+                <Icon name="trash-outline" size={15} color="#9333ea" />
+                <Text style={styles.clearRecentsText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.recentStoresScroll}
+              contentContainerStyle={styles.recentStoresContainer}
+            >
+              {recentStores.map((store) => (
+                <TouchableOpacity
+                  key={store.id}
+                  style={styles.recentStoreCard}
+                  onPress={() => {
+                    setSelectedStore(store);
+                    addRecentStore(store);
+                  }}
+                >
+                  {getStorageUrl(store.photos_url?.[0] || null, store.user_id) ? (
+                    <Image
+                      source={{ uri: getStorageUrl(store.photos_url?.[0] || null, store.user_id) || '' }}
+                      style={styles.recentStoreImage}
+                    />
+                  ) : (
+                    <View style={styles.recentStoreImagePlaceholder}>
+                      <Icon name="image-outline" size={30} color="#999" />
+                    </View>
+                  )}
+                  <View style={styles.recentStoreContent}>
+                    <Text style={styles.recentStoreName} numberOfLines={1}>
+                      {store.store_name || "Unnamed Store"}
+                    </Text>
+                    {store.address && (
+                      <View style={styles.recentStoreAddressContainer}>
+                        <Icon name="location-outline" size={12} color="#be3e3e" />
+                        <Text style={styles.recentStoreAddress} numberOfLines={1}>
+                          {store.address}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* Main Content (Results/Loader/Empty State) */}
         {mainContent}
       </ScrollView>
 
       <TagSidePanel />
+
+      <StoreProfileModal
+        visible={Boolean(selectedStore)}
+        store={selectedStore}
+        onClose={() => setSelectedStore(null)}
+      />
 
       <BottomNav visible />
     </View>
@@ -961,5 +1075,61 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#9333ea",
     fontWeight: "500",
+  },
+  // ---- Recently Viewed Stores styles ----
+  recentStoresSection: {
+    marginBottom: 16,
+    marginTop: -4,
+  },
+  recentStoresScroll: {
+    marginTop: 6,
+  },
+  recentStoresContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  recentStoreCard: {
+    width: 160,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+  },
+  recentStoreImage: {
+    width: "100%",
+    height: 100,
+    resizeMode: "cover",
+  },
+  recentStoreImagePlaceholder: {
+    width: "100%",
+    height: 100,
+    backgroundColor: "#F0F0F0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  recentStoreContent: {
+    padding: 10,
+  },
+  recentStoreName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#494848",
+    marginBottom: 4,
+  },
+  recentStoreAddressContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  recentStoreAddress: {
+    fontSize: 11,
+    color: "#be3e3e",
+    flex: 1,
   },
 });

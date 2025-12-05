@@ -1,16 +1,17 @@
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 import Icon from "react-native-vector-icons/Ionicons";
-import BottomNav from "../../components/BottomNav";
+// REMOVED: import BottomNav from "../../components/BottomNav";
 import { useUserProfile } from "../../context/UserProfileContext";
 import { getCurrentUser } from "../../lib/authUtils";
 import { supabase } from "../../lib/supabase";
@@ -36,6 +37,99 @@ interface AnalyticsStats {
   favorites: number;
 }
 
+type PieSliceConfig = { value: number; color: string };
+
+interface VisitBreakdownPieProps {
+  slices: PieSliceConfig[];
+  size?: number;
+  innerRadius?: number;
+}
+
+function degreesToRadians(angle: number) {
+  return (Math.PI / 180) * angle;
+}
+
+function polarToCartesian(centerX: number, centerY: number, radius: number, angle: number) {
+  const rad = degreesToRadians(angle - 90);
+  return {
+    x: centerX + radius * Math.cos(rad),
+    y: centerY + radius * Math.sin(rad),
+  };
+}
+
+function describeDonutSlice(
+  centerX: number,
+  centerY: number,
+  outerRadius: number,
+  innerRadius: number,
+  startAngle: number,
+  endAngle: number
+) {
+  const arcSweep = endAngle - startAngle <= 180 ? 0 : 1;
+  const startOuter = polarToCartesian(centerX, centerY, outerRadius, endAngle);
+  const endOuter = polarToCartesian(centerX, centerY, outerRadius, startAngle);
+  const startInner = polarToCartesian(centerX, centerY, innerRadius, endAngle);
+  const endInner = polarToCartesian(centerX, centerY, innerRadius, startAngle);
+
+  return [
+    "M",
+    startOuter.x,
+    startOuter.y,
+    "A",
+    outerRadius,
+    outerRadius,
+    0,
+    arcSweep,
+    0,
+    endOuter.x,
+    endOuter.y,
+    "L",
+    endInner.x,
+    endInner.y,
+    "A",
+    innerRadius,
+    innerRadius,
+    0,
+    arcSweep,
+    1,
+    startInner.x,
+    startInner.y,
+    "Z",
+  ].join(" ");
+}
+
+const VisitBreakdownPie = ({ slices, size = 180, innerRadius = 60 }: VisitBreakdownPieProps) => {
+  const radius = size / 2;
+
+  if (!slices.length) {
+    return (
+      <Svg width={size} height={size}>
+        <Circle cx={radius} cy={radius} r={radius} fill="#ecedf2" />
+        <Circle cx={radius} cy={radius} r={innerRadius} fill="#fff" />
+      </Svg>
+    );
+  }
+
+  const totalValue = slices.reduce((sum, slice) => sum + slice.value, 0);
+  let startAngle = -90;
+
+  return (
+    <Svg width={size} height={size}>
+      {slices.map((slice, index) => {
+        if (slice.value <= 0 || totalValue === 0) {
+          return null;
+        }
+
+        const sliceAngle = (slice.value / totalValue) * 360;
+        const path = describeDonutSlice(radius, radius, radius, innerRadius, startAngle, startAngle + sliceAngle);
+        startAngle += sliceAngle;
+
+        return <Path key={`pie-slice-${index}`} d={path} fill={slice.color} />;
+      })}
+    </Svg>
+  );
+};
+
 export default function ProfessionalToolsAnalyticsScreen() {
   const router = useRouter();
   const { userProfile } = useUserProfile();
@@ -56,8 +150,29 @@ export default function ProfessionalToolsAnalyticsScreen() {
     promotionClicks: 0,
     favorites: 0,
   });
+  const [visitBreakdown, setVisitBreakdown] = useState<{ saved: number; random: number }>({
+    saved: 0,
+    random: 0,
+  });
 
   const [loading, setLoading] = useState(true);
+
+  const totalVisitBreakdown = visitBreakdown.saved + visitBreakdown.random;
+  const savedVisitPercent =
+    totalVisitBreakdown > 0 ? Math.round((visitBreakdown.saved / totalVisitBreakdown) * 100) : 0;
+  const randomVisitPercent = totalVisitBreakdown > 0 ? 100 - savedVisitPercent : 0;
+  const pieSlices: PieSliceConfig[] = [
+    {
+      value: visitBreakdown.saved,
+      color: "#e91e63",
+    },
+    {
+      value: visitBreakdown.random,
+      color: "#468dff",
+    },
+  ];
+  const activePieSlices = pieSlices.filter((slice) => slice.value > 0);
+  const pieDataForChart = activePieSlices.length > 0 ? activePieSlices : [{ value: 1, color: "#ecedf2" }];
 
   // Fetch user's stores on mount
   useEffect(() => {
@@ -117,13 +232,7 @@ export default function ProfessionalToolsAnalyticsScreen() {
           .eq("status", "accepted");
 
         const storeIds = storesData?.map((s) => s.id) || [];
-
-        console.log('Store IDs for filtering:', {
-          storeIds,
-          selectedStoreId,
-          storesCount: storeIds.length,
-          sampleStoreIds: storeIds.slice(0, 3),
-        });
+        const targetStoreIds = selectedStoreId ? [selectedStoreId] : storeIds;
 
         // Calculate date range based on period
         const now = new Date();
@@ -137,14 +246,6 @@ export default function ProfessionalToolsAnalyticsScreen() {
 
         const startIso = startDate.toISOString();
         const endIso = endDate.toISOString();
-
-        console.log('Analytics Query Debug:', {
-          userId,
-          storeIds,
-          selectedStoreId,
-          engagementPeriod,
-          dateRange: { start: startIso, end: endIso },
-        });
 
         // Fetch total stores count
         let storesQuery = supabase
@@ -176,30 +277,16 @@ export default function ProfessionalToolsAnalyticsScreen() {
         const { count: activePromotions } = await promotionsQuery;
 
         // Fetch engagement events
-        // First, let's check ALL engagement events for debugging (without date filter)
-        const { data: allEngagementRows } = await supabase
-          .from("engagement_events")
-          .select("engagement, store_id, promotion_id, created_at")
-          .eq("engagement", "favorite");
-
-        console.log('All favorite engagements (no filters):', {
-          total: allEngagementRows?.length || 0,
-          sample: allEngagementRows?.slice(0, 5),
-          storeIdsInData: [...new Set(allEngagementRows?.map(e => e.store_id).filter(Boolean))],
-        });
-
         let engagementQuery = supabase
           .from("engagement_events")
-          .select("engagement, store_id, promotion_id, created_at")
+          .select("engagement, store_id, promotion_id, created_at, user_id")
           .gte("created_at", startIso)
           .lte("created_at", endIso);
 
         if (selectedStoreId) {
           engagementQuery = engagementQuery.eq("store_id", selectedStoreId);
-          console.log('Filtering by selected store:', selectedStoreId);
-        } else if (storeIds.length > 0) {
-          engagementQuery = engagementQuery.in("store_id", storeIds);
-          console.log('Filtering by store IDs:', storeIds);
+        } else if (targetStoreIds.length > 0) {
+          engagementQuery = engagementQuery.in("store_id", targetStoreIds);
         } else {
           setStats({
             totalStores: totalStores || 0,
@@ -208,18 +295,12 @@ export default function ProfessionalToolsAnalyticsScreen() {
             promotionClicks: 0,
             favorites: 0,
           });
+          setVisitBreakdown({ saved: 0, random: 0 });
           setLoading(false);
           return;
         }
 
         const { data: engagementRows, error: engagementError } = await engagementQuery;
-
-        console.log('Engagement Query Results:', {
-          totalRows: engagementRows?.length || 0,
-          error: engagementError,
-          sampleRows: engagementRows?.slice(0, 3),
-          allFavorites: engagementRows?.filter((e) => e.engagement === 'favorite'),
-        });
 
         if (engagementError) {
           console.error("Error fetching engagement events:", engagementError);
@@ -230,6 +311,7 @@ export default function ProfessionalToolsAnalyticsScreen() {
             promotionClicks: 0,
             favorites: 0,
           });
+          setVisitBreakdown({ saved: 0, random: 0 });
           setLoading(false);
           return;
         }
@@ -259,21 +341,41 @@ export default function ProfessionalToolsAnalyticsScreen() {
           }
         }
 
-        // Count by engagement type
-        const visits = engagementRows?.filter((e) => e.engagement === 'visit').length || 0;
+        const visitRows = engagementRows?.filter((e) => e.engagement === 'visit') || [];
+        let savedStoreVisits = 0;
+
+        if (visitRows.length > 0 && targetStoreIds.length > 0) {
+          // Query engagement_events table for favorites (not user_favorite_stores)
+          const { data: favoriteStoreRelations } = await supabase
+            .from("engagement_events")
+            .select("user_id, store_id")
+            .eq("engagement", "favorite")
+            .in("store_id", targetStoreIds)
+            .not("store_id", "is", null);
+
+          const favoritePairs = new Set(
+            (favoriteStoreRelations || [])
+              .filter((relation) => relation.user_id && relation.store_id)
+              .map((relation) => `${relation.user_id}_${relation.store_id}`)
+          );
+
+          if (favoritePairs.size > 0) {
+            savedStoreVisits = visitRows.filter(
+              (visit) =>
+                visit.user_id &&
+                visit.store_id &&
+                favoritePairs.has(`${visit.user_id}_${visit.store_id}`)
+            ).length;
+          }
+        }
+
+        const visits = visitRows.length;
         const promotionClicksFromStoreId = engagementRows?.filter(
           (e) => e.engagement === 'promotion_click' && e.store_id
         ).length || 0;
         const promotionClicks = promotionClicksFromStoreId + additionalPromotionClicks.length;
         const favorites = engagementRows?.filter((e) => e.engagement === 'favorite').length || 0;
-
-        console.log('Final Stats Calculation:', {
-          visits,
-          promotionClicks,
-          favorites,
-          totalEngagementRows: engagementRows?.length || 0,
-          favoriteRows: engagementRows?.filter((e) => e.engagement === 'favorite'),
-        });
+        const randomStoreVisits = Math.max(visits - savedStoreVisits, 0);
 
         setStats({
           totalStores: totalStores || 0,
@@ -282,8 +384,13 @@ export default function ProfessionalToolsAnalyticsScreen() {
           promotionClicks,
           favorites,
         });
+        setVisitBreakdown({
+          saved: savedStoreVisits,
+          random: randomStoreVisits,
+        });
       } catch (error) {
         console.error("Error fetching analytics:", error);
+        setVisitBreakdown({ saved: 0, random: 0 });
       } finally {
         setLoading(false);
       }
@@ -303,6 +410,16 @@ export default function ProfessionalToolsAnalyticsScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          {/* Back button above header */}
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.replace("/(tabs)/discover")}
+            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+          >
+            <Icon name="chevron-back" size={28} color="#181a20" />
+          </TouchableOpacity>
+
+          {/* Header placed lower */}
           <View style={styles.header}>
             <Text style={styles.greetingTitle}>Analytics</Text>
             <Text style={styles.greetingSubtitle}>
@@ -460,9 +577,64 @@ export default function ProfessionalToolsAnalyticsScreen() {
               </View>
             </View>
           </View>
+
+          {/* Insights Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Insights</Text>
+            <Text style={styles.sectionSubtitle}>Saved fans vs. new visitors</Text>
+            <View style={styles.insightsCard}>
+              <View style={styles.pieChartWrapper}>
+                <VisitBreakdownPie slices={pieDataForChart} size={180} innerRadius={70} />
+                <View style={styles.centerLabel}>
+                  <Text style={styles.centerLabelValue}>{stats.visits.toLocaleString()}</Text>
+                  <Text style={styles.centerLabelCaption}>Total visits</Text>
+                </View>
+              </View>
+              {totalVisitBreakdown > 0 ? (
+                <>
+                  <Text style={styles.insightsSummary}>
+                    {savedVisitPercent}% of your recent visits came from shoppers who already saved your store.
+                  </Text>
+                  <View style={styles.insightsLegend}>
+                    <View style={styles.insightsLegendRow}>
+                      <View style={styles.insightsLegendLabel}>
+                        <View style={[styles.legendDot, { backgroundColor: "#e91e63" }]} />
+                        <View>
+                          <Text style={styles.legendTitle}>Saved visitors</Text>
+                          <Text style={styles.legendSubtitle}>Users who favourited you</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.legendValue}>
+                        {visitBreakdown.saved.toLocaleString()} ({savedVisitPercent}%)
+                      </Text>
+                    </View>
+                    <View style={styles.insightsLegendRow}>
+                      <View style={styles.insightsLegendLabel}>
+                        <View style={[styles.legendDot, { backgroundColor: "#468dff" }]} />
+                        <View>
+                          <Text style={styles.legendTitle}>Random visitors</Text>
+                          <Text style={styles.legendSubtitle}>Organic discovery</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.legendValue}>
+                        {visitBreakdown.random.toLocaleString()} ({randomVisitPercent}%)
+                      </Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.insightsEmptyState}>
+                  <Text style={styles.insightsEmptyTitle}>No visit data yet</Text>
+                  <Text style={styles.insightsEmptySubtitle}>
+                    Once shoppers browse your stores we will highlight how many already saved you.
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
         </ScrollView>
       )}
-      <BottomNav visible />
+      {/* REMOVED: <BottomNav visible /> */}
     </View>
   );
 }
@@ -484,8 +656,16 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 110,
   },
+  backButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    marginBottom: 10,
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
   header: {
     marginBottom: 24,
+    marginTop: 12,
   },
   greetingTitle: {
     fontSize: 26,
@@ -620,6 +800,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#191820",
   },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: "#8f92a1",
+    marginTop: 4,
+  },
   engagementPeriodButtons: {
     flexDirection: "row",
     gap: 8,
@@ -676,5 +861,90 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#191820",
   },
+  insightsCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 20,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#ecedf2",
+  },
+  pieChartWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 180,
+    height: 180,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  centerLabel: {
+    position: "absolute",
+    alignItems: "center",
+  },
+  centerLabelValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#191820",
+  },
+  centerLabelCaption: {
+    fontSize: 12,
+    color: "#8f92a1",
+    marginTop: 2,
+  },
+  insightsSummary: {
+    fontSize: 14,
+    color: "#191820",
+    fontWeight: "600",
+    marginBottom: 16,
+  },
+  insightsLegend: {
+    gap: 14,
+  },
+  insightsLegendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  insightsLegendLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  legendTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#191820",
+  },
+  legendSubtitle: {
+    fontSize: 12,
+    color: "#8f92a1",
+  },
+  legendValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#191820",
+  },
+  insightsEmptyState: {
+    alignItems: "center",
+    paddingVertical: 30,
+    paddingHorizontal: 8,
+  },
+  insightsEmptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#191820",
+    marginBottom: 6,
+  },
+  insightsEmptySubtitle: {
+    fontSize: 13,
+    color: "#8f92a1",
+    textAlign: "center",
+    lineHeight: 18,
+  },
 });
-

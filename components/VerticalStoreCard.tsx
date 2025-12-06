@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getCachedImageUrls } from '../lib/imageCache';
 
@@ -83,7 +83,7 @@ export default function VerticalStoreCard({ store, onPress }: VerticalStoreCardP
           />
         ) : (
           <View style={styles.verticalPlaceholder}>
-            <Text style={styles.placeholderIcon}>📷</Text>
+            <ActivityIndicator size="large" color="#468dff" />
           </View>
         )}
       </View>

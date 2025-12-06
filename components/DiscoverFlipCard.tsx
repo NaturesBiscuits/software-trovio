@@ -1,6 +1,7 @@
 import { Image } from 'expo-image';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   ScrollView,
@@ -299,7 +300,7 @@ export default React.memo(function DiscoverFlipCard({
         />
       ) : (
         <View style={styles.placeholderBox}>
-          <Text style={styles.placeholderIcon}>📷</Text>
+          <ActivityIndicator size="large" color="#468dff" />
         </View>
       )}
       <View style={styles.cardOverlayWhiteNoRadiusFixed}>

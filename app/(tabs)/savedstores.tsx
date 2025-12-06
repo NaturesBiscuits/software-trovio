@@ -1,12 +1,13 @@
-import * as Location from "expo-location";
-import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, FlatList, RefreshControl, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
-import { supabase } from "../../lib/supabase";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
 import StoreProfileModal, { removeSavedStoreId } from "../../components/StoreProfileModal";
 import { unfavorite } from "../../lib/engagementTracking";
+import { cacheStores, getCachedStores } from "../../lib/storeCache";
+import { supabase } from "../../lib/supabase";
 
 // VerticalStoreCardWithHeart: a local wrapper that adds an inline heart button
 function VerticalStoreCardWithHeart({ store, onPress, onUnfavorite }: {
@@ -50,7 +51,6 @@ function VerticalStoreCardWithHeart({ store, onPress, onUnfavorite }: {
 }
 
 // A small local helper to render only the image area of VerticalStoreCard, in order to preserve image loading logic.
-import OriginalVerticalStoreCard from "../../components/VerticalStoreCard";
 function VerticalStoreCardOnlyImage({ store }: { store: StoreApplication }) {
   // This component renders only the image/placeholder part from VerticalStoreCard
   // To keep code DRY and avoid duplicating all the image loading logic, you can either
@@ -99,7 +99,7 @@ function VerticalStoreCardOnlyImage({ store }: { store: StoreApplication }) {
         />
       ) : (
         <View style={styles.verticalPlaceholder}>
-          <Text style={styles.placeholderIcon}>📷</Text>
+          <ActivityIndicator size="large" color="#468dff" />
         </View>
       )}
     </View>
@@ -142,16 +142,32 @@ export default function FavouritesScreen() {
 
       const ids = favorites.map(f => f.store_id).filter(Boolean) as string[];
 
-      const { data, error } = await supabase
-        .from("store_applications")
-        .select("*")
-        .in("id", ids);
+      // Check cache first
+      const cachedStores = await getCachedStores(ids);
+      const uncachedIds = ids.filter(id => !cachedStores.has(id));
 
-      if (error) throw error;
+      let storesToUse = Array.from(cachedStores.values());
 
-      const dataOrEmpty = data || [];
+      // Fetch uncached stores
+      if (uncachedIds.length > 0) {
+        const { data, error } = await supabase
+          .from("store_applications")
+          .select("*")
+          .in("id", uncachedIds);
+
+        if (error) throw error;
+
+        if (data) {
+          // Cache the new stores
+          await cacheStores(data);
+          storesToUse = [...storesToUse, ...data];
+        }
+      }
+
+      // Maintain order from ids
+      const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
       const ordered = ids
-        .map(id => dataOrEmpty.find(d => d.id === id))
+        .map(id => storeMap.get(id))
         .filter(Boolean) as StoreApplication[];
 
       setSavedStores(ordered);

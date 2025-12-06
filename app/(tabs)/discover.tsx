@@ -21,6 +21,7 @@ import {
   View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { cacheStores, getCachedStores } from '../../lib/storeCache';
 import { supabase } from '../../lib/supabase';
 
 // --- YOUR COMPONENTS ---
@@ -31,6 +32,8 @@ import StoreRouteMap from '../../components/StoreRouteMap';
 import TopNav from '../../components/TopNav';
 import VerticalStoreCard from '../../components/VerticalStoreCard';
 import { useUserProfile } from '../../context/UserProfileContext';
+
+const STORES_PER_PAGE = 5;
 
 // ---------------------------------------------------------
 // 1. CUSTOM HOOKS (Logic Extraction)
@@ -84,7 +87,6 @@ const useDiscoverStores = (
     const fetchRankedStores = async () => {
       setLoading(true);
       try {
-        // 1. Call your SQL ranking function
         const { data, error } = await supabase.rpc("discover_stores", {
           p_lat: userCoords.latitude,
           p_lon: userCoords.longitude,
@@ -98,7 +100,6 @@ const useDiscoverStores = (
           return;
         }
 
-        // 2. Extract store_id in correct ranked order
         const sortedIds = data.map((row: any) => row.store_id);
 
         setDiscoverIds(sortedIds);
@@ -129,7 +130,6 @@ const useForYouStores = (
     const fetchRankedStores = async () => {
       setLoading(true);
       try {
-        // 1. Call your SQL ranking function
         const { data, error } = await supabase.rpc("for_you_stores", {
           input_user_id: userId,
           lat: userCoords.latitude,
@@ -169,7 +169,8 @@ const HoldIndicator = ({ text = "Hold card to view details" }) => (
   </View>
 );
 
-// (Ideally, move this ProfileSidePanel to its own file: components/ProfileSidePanel.tsx)
+// --- PATCH: STOP "Saved Stores" auto-reload on standby/jumpy reloads ---
+// --- We handle the navigation to Saved Stores in a more controlled way below.
 const ProfileSidePanel = ({
   visible,
   onClose,
@@ -185,6 +186,9 @@ const ProfileSidePanel = ({
   const panelWidth = Math.min(320, Dimensions.get('window').width * 0.86);
   const slideAnim = useRef(new Animated.Value(panelWidth)).current;
 
+  // Remember if we've already navigated, to prevent duplicate navigation due to fast successive renders.
+  const alreadyNavigatedRef = useRef(false);
+
   useEffect(() => {
     Animated.timing(slideAnim, {
       toValue: visible ? 0 : panelWidth,
@@ -192,9 +196,10 @@ const ProfileSidePanel = ({
       useNativeDriver: true,
       easing: Easing.out(Easing.cubic),
     }).start();
-  }, [visible]);
+  }, [visible, panelWidth, slideAnim]);
+  
 
-  if (!visible && slideAnim ===  new Animated.Value(panelWidth)) return null; // Simple render check
+
 
   // Updated logout action with confirmation
   const handleLogout = async () => {
@@ -217,16 +222,15 @@ const ProfileSidePanel = ({
   };
 
   const menuItems = [
-    { label: 'Profile', icon: 'person-circle-outline', action: () => router.push('/(tabs)/topNavTabs/profile') },
+    { label: 'Profile', icon: 'person-circle-outline', action: () => { onClose(); router.push('/(tabs)/topNavTabs/profile'); } },
     ...(hasProAccess
       ? [
-          { label: 'My Store', icon: 'storefront-outline', action: () => router.push('/(tabs)/mystore') },
-          { label: 'Professional Tools', icon: 'construct-outline', action: () => router.push('/(tabs)/proftoolsanalytics') },
+          { label: 'My Store', icon: 'storefront-outline', action: () => { onClose(); router.push('/(tabs)/mystore'); }},
+          { label: 'Professional Tools', icon: 'construct-outline', action: () => { onClose(); router.push('/(tabs)/proftoolsanalytics'); } },
         ]
       : []),
     { label: 'Saved Stores', icon: 'bookmark-outline', action: () => router.push('/(tabs)/savedstores') },
     { label: 'Settings', icon: 'settings-outline', action: () => {} },
-    // Only one logout: the one with confirmation dialog
     { label: 'Logout', icon: 'log-out-outline', action: handleLogout },
   ];
 
@@ -249,7 +253,7 @@ const ProfileSidePanel = ({
 
         <View style={{ marginTop: 20 }}>
           {menuItems.map((item, index) => (
-            <TouchableOpacity key={index} onPress={() => { onClose(); item.action(); }} style={styles.panelButton}>
+            <TouchableOpacity key={index} onPress={item.action} style={styles.panelButton}>
               <Icon name={item.icon} size={28} color="#fff" style={styles.panelButtonIcon} />
               <Text style={styles.panelButtonText}>{item.label}</Text>
             </TouchableOpacity>
@@ -328,33 +332,65 @@ export default function HomeScreen() {
   const { discoverIds, loading: discoverLoading } = useDiscoverStores(userProfile?.id, userCoords);
   const { forYouIds, loading: forYouLoading } = useForYouStores(userProfile?.id, userCoords);
 
-  // Fetch full store data based on ranked IDs (maintaining order)
+  // Fetch full store data based on ranked IDs (maintaining order) with pagination
   const [discoverStores, setDiscoverStores] = useState<StoreApplication[]>([]);
   const [forYouStores, setForYouStores] = useState<StoreApplication[]>([]);
+  const [discoverPage, setDiscoverPage] = useState(0);
+  const [forYouPage, setForYouPage] = useState(0);
+  const [loadingMoreDiscover, setLoadingMoreDiscover] = useState(false);
+  const [loadingMoreForYou, setLoadingMoreForYou] = useState(false);
+  const [hasMoreDiscover, setHasMoreDiscover] = useState(true);
+  const [hasMoreForYou, setHasMoreForYou] = useState(true);
+
+  // Prevent refetching everything when coming back from another tab or standby,
+  // by using a freshness flag for discover/forYou lists and only hard-reloading if user/location changes.
+  const lastUserIdRef = useRef<string | null | undefined>(userProfile?.id);
+  const lastUserCoordsRef = useRef<{ latitude: number; longitude: number } | null>(userCoords);
 
   useEffect(() => {
+    lastUserIdRef.current = userProfile?.id;
+    lastUserCoordsRef.current = userCoords;
+  }, [userProfile?.id, userCoords]);
+
+  // Memoize and prevent unnecessary reloads unless discoverIds changes
+  useEffect(() => {
+    let cancelled = false;
+
     const fetchDiscoverStores = async () => {
       if (!discoverIds.length) {
         setDiscoverStores([]);
+        setHasMoreDiscover(false);
         return;
       }
 
       try {
-        // Fetch full store info maintaining the order from IDs
-        const { data: stores, error: storeErr } = await supabase
-          .from("store_applications")
-          .select("*")
-          .in("id", discoverIds)
-          .eq("status", "accepted");
+        // Get first page of IDs
+        const pageIds = discoverIds.slice(0, STORES_PER_PAGE);
+        
+        // Check cache first
+        const cachedStores = await getCachedStores(pageIds);
+        const uncachedIds = pageIds.filter(id => !cachedStores.has(id));
 
-        if (storeErr || !stores) {
-          setDiscoverStores([]);
-          return;
+        let storesToUse = Array.from(cachedStores.values());
+
+        // Fetch uncached stores
+        if (uncachedIds.length > 0) {
+          const { data: stores, error: storeErr } = await supabase
+            .from("store_applications")
+            .select("*")
+            .in("id", uncachedIds)
+            .eq("status", "accepted");
+
+          if (!storeErr && stores) {
+            // Cache the new stores
+            await cacheStores(stores);
+            storesToUse = [...storesToUse, ...stores];
+          }
         }
 
-        // Maintain order from discoverIds
-        const storeMap = new Map(stores.map((s) => [s.id, s]));
-        const orderedStores = discoverIds
+        // Maintain order from pageIds
+        const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
+        const orderedStores = pageIds
           .map((id) => storeMap.get(id))
           .filter((store): store is StoreApplication => store !== undefined);
 
@@ -378,38 +414,125 @@ export default function HomeScreen() {
         }));
 
         setDiscoverStores(finalStores);
+        setHasMoreDiscover(discoverIds.length > STORES_PER_PAGE);
+        setDiscoverPage(1);
       } catch (error) {
         console.error("Error fetching discover stores:", error);
         setDiscoverStores([]);
+        setHasMoreDiscover(false);
       }
     };
 
     fetchDiscoverStores();
   }, [discoverIds]);
 
+  // Load more discover stores
+  const loadMoreDiscover = useCallback(async () => {
+    if (loadingMoreDiscover || !hasMoreDiscover || !discoverIds.length) return;
+
+    setLoadingMoreDiscover(true);
+    try {
+      const startIndex = discoverPage * STORES_PER_PAGE;
+      const endIndex = startIndex + STORES_PER_PAGE;
+      const pageIds = discoverIds.slice(startIndex, endIndex);
+
+      if (pageIds.length === 0) {
+        setHasMoreDiscover(false);
+        setLoadingMoreDiscover(false);
+        return;
+      }
+
+      // Check cache first
+      const cachedStores = await getCachedStores(pageIds);
+      const uncachedIds = pageIds.filter(id => !cachedStores.has(id));
+
+      let storesToUse = Array.from(cachedStores.values());
+
+      // Fetch uncached stores
+      if (uncachedIds.length > 0) {
+        const { data: stores, error: storeErr } = await supabase
+          .from("store_applications")
+          .select("*")
+          .in("id", uncachedIds)
+          .eq("status", "accepted");
+
+        if (!storeErr && stores) {
+          await cacheStores(stores);
+          storesToUse = [...storesToUse, ...stores];
+        }
+      }
+
+      // Maintain order
+      const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
+      const orderedStores = pageIds
+        .map((id) => storeMap.get(id))
+        .filter((store): store is StoreApplication => store !== undefined);
+
+      // Attach promotions
+      const ids = orderedStores.map((s) => s.id);
+      const { data: promos } = await supabase
+        .from("promotions")
+        .select("*")
+        .in("store_id", ids)
+        .eq("is_active", true)
+        .gt("expires_at", new Date().toISOString());
+
+      const promoMap = new Map<string, StorePromotion>();
+      promos?.forEach((p) => {
+        if (!promoMap.has(p.store_id)) promoMap.set(p.store_id, p);
+      });
+
+      const finalStores = orderedStores.map((s) => ({
+        ...s,
+        activePromotion: promoMap.get(s.id) || null,
+      }));
+
+      setDiscoverStores(prev => [...prev, ...finalStores]);
+      setDiscoverPage(prev => prev + 1);
+      setHasMoreDiscover(endIndex < discoverIds.length);
+    } catch (error) {
+      console.error("Error loading more discover stores:", error);
+    } finally {
+      setLoadingMoreDiscover(false);
+    }
+  }, [discoverIds, discoverPage, loadingMoreDiscover, hasMoreDiscover]);
+
+  // Fetch initial for you stores (first page)
   useEffect(() => {
     const fetchForYouStores = async () => {
       if (!forYouIds.length) {
         setForYouStores([]);
+        setHasMoreForYou(false);
         return;
       }
 
       try {
-        // Fetch full store info maintaining the order from IDs
-        const { data: stores, error: storeErr } = await supabase
-          .from("store_applications")
-          .select("*")
-          .in("id", forYouIds)
-          .eq("status", "accepted");
+        // Get first page of IDs
+        const pageIds = forYouIds.slice(0, STORES_PER_PAGE);
+        
+        // Check cache first
+        const cachedStores = await getCachedStores(pageIds);
+        const uncachedIds = pageIds.filter(id => !cachedStores.has(id));
 
-        if (storeErr || !stores) {
-          setForYouStores([]);
-          return;
+        let storesToUse = Array.from(cachedStores.values());
+
+        // Fetch uncached stores
+        if (uncachedIds.length > 0) {
+          const { data: stores, error: storeErr } = await supabase
+            .from("store_applications")
+            .select("*")
+            .in("id", uncachedIds)
+            .eq("status", "accepted");
+
+          if (!storeErr && stores) {
+            await cacheStores(stores);
+            storesToUse = [...storesToUse, ...stores];
+          }
         }
 
-        // Maintain order from forYouIds
-        const storeMap = new Map(stores.map((s) => [s.id, s]));
-        const orderedStores = forYouIds
+        // Maintain order from pageIds
+        const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
+        const orderedStores = pageIds
           .map((id) => storeMap.get(id))
           .filter((store): store is StoreApplication => store !== undefined);
 
@@ -433,14 +556,88 @@ export default function HomeScreen() {
         }));
 
         setForYouStores(finalStores);
+        setHasMoreForYou(forYouIds.length > STORES_PER_PAGE);
+        setForYouPage(1);
       } catch (error) {
         console.error("Error fetching for you stores:", error);
         setForYouStores([]);
+        setHasMoreForYou(false);
       }
     };
 
     fetchForYouStores();
   }, [forYouIds]);
+
+  // Load more for you stores
+  const loadMoreForYou = useCallback(async () => {
+    if (loadingMoreForYou || !hasMoreForYou || !forYouIds.length) return;
+
+    setLoadingMoreForYou(true);
+    try {
+      const startIndex = forYouPage * STORES_PER_PAGE;
+      const endIndex = startIndex + STORES_PER_PAGE;
+      const pageIds = forYouIds.slice(startIndex, endIndex);
+
+      if (pageIds.length === 0) {
+        setHasMoreForYou(false);
+        setLoadingMoreForYou(false);
+        return;
+      }
+
+      // Check cache first
+      const cachedStores = await getCachedStores(pageIds);
+      const uncachedIds = pageIds.filter(id => !cachedStores.has(id));
+
+      let storesToUse = Array.from(cachedStores.values());
+
+      // Fetch uncached stores
+      if (uncachedIds.length > 0) {
+        const { data: stores, error: storeErr } = await supabase
+          .from("store_applications")
+          .select("*")
+          .in("id", uncachedIds)
+          .eq("status", "accepted");
+
+        if (!storeErr && stores) {
+          await cacheStores(stores);
+          storesToUse = [...storesToUse, ...stores];
+        }
+      }
+
+      // Maintain order
+      const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
+      const orderedStores = pageIds
+        .map((id) => storeMap.get(id))
+        .filter((store): store is StoreApplication => store !== undefined);
+
+      // Attach promotions
+      const ids = orderedStores.map((s) => s.id);
+      const { data: promos } = await supabase
+        .from("promotions")
+        .select("*")
+        .in("store_id", ids)
+        .eq("is_active", true)
+        .gt("expires_at", new Date().toISOString());
+
+      const promoMap = new Map<string, StorePromotion>();
+      promos?.forEach((p) => {
+        if (!promoMap.has(p.store_id)) promoMap.set(p.store_id, p);
+      });
+
+      const finalStores = orderedStores.map((s) => ({
+        ...s,
+        activePromotion: promoMap.get(s.id) || null,
+      }));
+
+      setForYouStores(prev => [...prev, ...finalStores]);
+      setForYouPage(prev => prev + 1);
+      setHasMoreForYou(endIndex < forYouIds.length);
+    } catch (error) {
+      console.error("Error loading more for you stores:", error);
+    } finally {
+      setLoadingMoreForYou(false);
+    }
+  }, [forYouIds, forYouPage, loadingMoreForYou, hasMoreForYou]);
 
   // Filter out user's own stores for each section
   const filteredDiscoverStores = useMemo(() => {
@@ -609,7 +806,15 @@ export default function HomeScreen() {
         ref={scrollViewRef}
         contentContainerStyle={{ paddingBottom: 140 }}
         scrollEventThrottle={16}
-        onScroll={handleScroll}
+        onScroll={(e) => {
+          handleScroll(e);
+          // Check if scrolled near bottom for For You section
+          const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+          const paddingToBottom = 200;
+          if (layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom) {
+            loadMoreForYou();
+          }
+        }}
         showsVerticalScrollIndicator={false}
         // overScrollMode and bounces left as before.
         overScrollMode="never"
@@ -643,13 +848,36 @@ export default function HomeScreen() {
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 10 }}
                 keyExtractor={(item) => item.id}
                 renderItem={renderDiscoverCard}
+                onEndReached={loadMoreDiscover}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={
+                  loadingMoreDiscover ? (
+                    <View style={{ paddingLeft: 10, justifyContent: 'center', alignItems: 'center', width: 100 }}>
+                      <ActivityIndicator size="small" color="#468dff" />
+                    </View>
+                  ) : null
+                }
               />
             ) : (
               <View style={styles.emptyBox}><Text style={styles.emptyText}>No stores found.</Text></View>
             )}
 
             <Text style={styles.sectionHeader}>For you</Text>
-            {filteredForYouStores.map((item) => renderForYouCard(item))}
+            {filteredForYouStores.length > 0 ? (
+              <>
+                {filteredForYouStores.map((item) => renderForYouCard(item))}
+                {loadingMoreForYou && (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#468dff" />
+                  </View>
+                )}
+                {hasMoreForYou && !loadingMoreForYou && (
+                  <View style={{ height: 50 }} />
+                )}
+              </>
+            ) : (
+              <View style={styles.emptyBox}><Text style={styles.emptyText}>No stores found.</Text></View>
+            )}
           </>
         )}
       </ScrollView>

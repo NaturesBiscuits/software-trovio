@@ -38,6 +38,7 @@ export interface StoreApplication {
   longitude: number | null;
   tags: string[] | null;
   activePromotion?: StorePromotion | null;
+  final_score?: number;
 }
 
 interface DiscoverFlipCardProps {

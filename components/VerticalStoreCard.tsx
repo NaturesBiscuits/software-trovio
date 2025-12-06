@@ -17,6 +17,7 @@ export interface StoreApplication {
   latitude: number | null;
   longitude: number | null;
   tags: string[] | null;
+  final_score?: number;
 }
 
 interface VerticalStoreCardProps {

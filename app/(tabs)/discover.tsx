@@ -68,120 +68,94 @@ const useLocationTracker = () => {
 };
 
 // Separate hooks for Discover and For You sections with different ordering
-const useDiscoverStores = () => {
-  const [discoverStores, setDiscoverStores] = useState<StoreApplication[]>([]);
+const useDiscoverStores = (
+  userId: string | null | undefined,
+  userCoords: { latitude: number; longitude: number } | null
+) => {
+  const [discoverIds, setDiscoverIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchStores = async () => {
+    if (!userId || !userCoords?.latitude || !userCoords?.longitude) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchRankedStores = async () => {
       setLoading(true);
       try {
-        // Discover section ordering - you can change this to use your algorithm
-        const { data, error } = await supabase
-          .from('store_applications')
-          .select('*')
-          .eq('status', 'accepted')
-          .order('created_at', { ascending: false }); // TODO: Replace with Discover algorithm ordering
+        // 1. Call your SQL ranking function
+        const { data, error } = await supabase.rpc("discover_stores", {
+          p_lat: userCoords.latitude,
+          p_lon: userCoords.longitude,
+          p_max_km: 50,
+          p_user_id: userId,
+        });
 
         if (error || !data) {
-          setDiscoverStores([]);
+          console.log("discover_stores() error:", error);
+          setDiscoverIds([]);
           return;
         }
 
-        let fetchedStores = data as StoreApplication[];
-        const storeIds = fetchedStores.map((store) => store.id).filter(Boolean);
+        // 2. Extract store_id in correct ranked order
+        const sortedIds = data.map((row: any) => row.store_id);
 
-        if (storeIds.length > 0) {
-          const { data: promotionsData, error: promotionsError } = await supabase
-            .from('promotions')
-            .select('*')
-            .in('store_id', storeIds)
-            .eq('is_active', true)
-            .gt('expires_at', new Date().toISOString())
-            .order('expires_at', { ascending: true });
-
-          if (!promotionsError && promotionsData) {
-            const promotionByStore = new Map<string, StorePromotion>();
-            (promotionsData as StorePromotion[]).forEach((promo) => {
-              if (!promotionByStore.has(promo.store_id)) {
-                promotionByStore.set(promo.store_id, promo);
-              }
-            });
-
-            fetchedStores = fetchedStores.map((store) => ({
-              ...store,
-              activePromotion: promotionByStore.get(store.id) || null,
-            }));
-          }
-        }
-
-        setDiscoverStores(fetchedStores);
+        setDiscoverIds(sortedIds);
       } finally {
         setLoading(false);
       }
     };
-    fetchStores();
-  }, []);
 
-  return { discoverStores, loading };
+    fetchRankedStores();
+  }, [userId, userCoords?.latitude, userCoords?.longitude]);
+
+  return { discoverIds, loading };
 };
 
-const useForYouStores = () => {
-  const [forYouStores, setForYouStores] = useState<StoreApplication[]>([]);
+const useForYouStores = (
+  userId: string | null | undefined,
+  userCoords: { latitude: number; longitude: number } | null
+) => {
+  const [forYouIds, setForYouIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchStores = async () => {
+    if (!userId || !userCoords?.latitude || !userCoords?.longitude) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchRankedStores = async () => {
       setLoading(true);
       try {
-        // For You section ordering - you can change this to use your algorithm
-        const { data, error } = await supabase
-          .from('store_applications')
-          .select('*')
-          .eq('status', 'accepted')
-          .order('created_at', { ascending: false }); // TODO: Replace with For You algorithm ordering
+        // 1. Call your SQL ranking function
+        const { data, error } = await supabase.rpc("for_you_stores", {
+          input_user_id: userId,
+          lat: userCoords.latitude,
+          lon: userCoords.longitude,
+          max_distance_km: 50
+        });
 
         if (error || !data) {
-          setForYouStores([]);
+          console.log("for_you_stores() error:", error);
+          setForYouIds([]);
           return;
         }
 
-        let fetchedStores = data as StoreApplication[];
-        const storeIds = fetchedStores.map((store) => store.id).filter(Boolean);
+        // 2. Extract store_id in correct ranked order
+        const sortedIds = data.map((row: any) => row.store_id);
 
-        if (storeIds.length > 0) {
-          const { data: promotionsData, error: promotionsError } = await supabase
-            .from('promotions')
-            .select('*')
-            .in('store_id', storeIds)
-            .eq('is_active', true)
-            .gt('expires_at', new Date().toISOString())
-            .order('expires_at', { ascending: true });
-
-          if (!promotionsError && promotionsData) {
-            const promotionByStore = new Map<string, StorePromotion>();
-            (promotionsData as StorePromotion[]).forEach((promo) => {
-              if (!promotionByStore.has(promo.store_id)) {
-                promotionByStore.set(promo.store_id, promo);
-              }
-            });
-
-            fetchedStores = fetchedStores.map((store) => ({
-              ...store,
-              activePromotion: promotionByStore.get(store.id) || null,
-            }));
-          }
-        }
-
-        setForYouStores(fetchedStores);
+        setForYouIds(sortedIds);
       } finally {
         setLoading(false);
       }
     };
-    fetchStores();
-  }, []);
 
-  return { forYouStores, loading };
+    fetchRankedStores();
+  }, [userId, userCoords?.latitude, userCoords?.longitude]);
+
+  return { forYouIds, loading };
 };
 
 // ---------------------------------------------------------
@@ -351,8 +325,122 @@ export default function HomeScreen() {
 
   // Custom Hooks
   const { userCoords, hasLocPerm } = useLocationTracker();
-  const { discoverStores, loading: discoverLoading } = useDiscoverStores();
-  const { forYouStores, loading: forYouLoading } = useForYouStores();
+  const { discoverIds, loading: discoverLoading } = useDiscoverStores(userProfile?.id, userCoords);
+  const { forYouIds, loading: forYouLoading } = useForYouStores(userProfile?.id, userCoords);
+
+  // Fetch full store data based on ranked IDs (maintaining order)
+  const [discoverStores, setDiscoverStores] = useState<StoreApplication[]>([]);
+  const [forYouStores, setForYouStores] = useState<StoreApplication[]>([]);
+
+  useEffect(() => {
+    const fetchDiscoverStores = async () => {
+      if (!discoverIds.length) {
+        setDiscoverStores([]);
+        return;
+      }
+
+      try {
+        // Fetch full store info maintaining the order from IDs
+        const { data: stores, error: storeErr } = await supabase
+          .from("store_applications")
+          .select("*")
+          .in("id", discoverIds)
+          .eq("status", "accepted");
+
+        if (storeErr || !stores) {
+          setDiscoverStores([]);
+          return;
+        }
+
+        // Maintain order from discoverIds
+        const storeMap = new Map(stores.map((s) => [s.id, s]));
+        const orderedStores = discoverIds
+          .map((id) => storeMap.get(id))
+          .filter((store): store is StoreApplication => store !== undefined);
+
+        // Attach promotions
+        const ids = orderedStores.map((s) => s.id);
+        const { data: promos } = await supabase
+          .from("promotions")
+          .select("*")
+          .in("store_id", ids)
+          .eq("is_active", true)
+          .gt("expires_at", new Date().toISOString());
+
+        const promoMap = new Map<string, StorePromotion>();
+        promos?.forEach((p) => {
+          if (!promoMap.has(p.store_id)) promoMap.set(p.store_id, p);
+        });
+
+        const finalStores = orderedStores.map((s) => ({
+          ...s,
+          activePromotion: promoMap.get(s.id) || null,
+        }));
+
+        setDiscoverStores(finalStores);
+      } catch (error) {
+        console.error("Error fetching discover stores:", error);
+        setDiscoverStores([]);
+      }
+    };
+
+    fetchDiscoverStores();
+  }, [discoverIds]);
+
+  useEffect(() => {
+    const fetchForYouStores = async () => {
+      if (!forYouIds.length) {
+        setForYouStores([]);
+        return;
+      }
+
+      try {
+        // Fetch full store info maintaining the order from IDs
+        const { data: stores, error: storeErr } = await supabase
+          .from("store_applications")
+          .select("*")
+          .in("id", forYouIds)
+          .eq("status", "accepted");
+
+        if (storeErr || !stores) {
+          setForYouStores([]);
+          return;
+        }
+
+        // Maintain order from forYouIds
+        const storeMap = new Map(stores.map((s) => [s.id, s]));
+        const orderedStores = forYouIds
+          .map((id) => storeMap.get(id))
+          .filter((store): store is StoreApplication => store !== undefined);
+
+        // Attach promotions
+        const ids = orderedStores.map((s) => s.id);
+        const { data: promos } = await supabase
+          .from("promotions")
+          .select("*")
+          .in("store_id", ids)
+          .eq("is_active", true)
+          .gt("expires_at", new Date().toISOString());
+
+        const promoMap = new Map<string, StorePromotion>();
+        promos?.forEach((p) => {
+          if (!promoMap.has(p.store_id)) promoMap.set(p.store_id, p);
+        });
+
+        const finalStores = orderedStores.map((s) => ({
+          ...s,
+          activePromotion: promoMap.get(s.id) || null,
+        }));
+
+        setForYouStores(finalStores);
+      } catch (error) {
+        console.error("Error fetching for you stores:", error);
+        setForYouStores([]);
+      }
+    };
+
+    fetchForYouStores();
+  }, [forYouIds]);
 
   // Filter out user's own stores for each section
   const filteredDiscoverStores = useMemo(() => {

@@ -21,8 +21,10 @@ import {
   View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cacheStores, getCachedStores } from '../../lib/storeCache';
 import { supabase } from '../../lib/supabase';
+import { STORE_TO_OPEN_KEY } from './notification';
 
 // --- YOUR COMPONENTS ---
 import BottomNav from '../../components/BottomNav';
@@ -765,6 +767,35 @@ export default function HomeScreen() {
       isMounted = false;
     };
   }, [userProfile?.id]);
+
+  // Check for store to open from notification
+  useEffect(() => {
+    const checkStoreToOpen = async () => {
+      try {
+        const storeIdToOpen = await AsyncStorage.getItem(STORE_TO_OPEN_KEY);
+        if (storeIdToOpen) {
+          // Clear the key immediately to prevent reopening on subsequent visits
+          await AsyncStorage.removeItem(STORE_TO_OPEN_KEY);
+          
+          // Fetch the store data
+          const { data: storeData, error } = await supabase
+            .from('store_applications')
+            .select('*')
+            .eq('id', storeIdToOpen)
+            .single();
+
+          if (!error && storeData) {
+            // Set the store to open the modal
+            setSelectedStore(storeData as StoreApplication);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking for store to open:', error);
+      }
+    };
+
+    checkStoreToOpen();
+  }, []);
 
   const renderDiscoverCard = useCallback(({ item, index }: { item: StoreApplication; index: number }) => (
     <View>

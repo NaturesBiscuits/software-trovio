@@ -2,25 +2,19 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   Text,
   View,
-  Image,
   StyleSheet,
   FlatList,
   RefreshControl,
   ActivityIndicator,
 } from "react-native";
 import BottomNav from "../../components/BottomNav";
+import NotificationCard, { PromotionNotification } from "../../components/notifications-card";
 import { supabase } from "../../lib/supabase";
 import { useNotifications } from "../../context/NotificationContext";
+import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-type PromotionNotification = {
-  id: string;
-  store_id: string;
-  store_name: string;
-  title: string;
-  description: string;
-  image_url: string | null;
-  created_at: string;
-};
+export const STORE_TO_OPEN_KEY = '@trovio_store_to_open';
 
 export default function NotificationScreen() {
   const [loading, setLoading] = useState(true);
@@ -29,6 +23,7 @@ export default function NotificationScreen() {
   const [savedStoreIds, setSavedStoreIds] = useState<string[]>([]);
   const [storeNameMap, setStoreNameMap] = useState<Record<string, string>>({});
   const { markNotificationsAsRead } = useNotifications();
+  const router = useRouter();
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -95,7 +90,9 @@ export default function NotificationScreen() {
         store_id: promo.store_id,
         store_name: names[promo.store_id] || "Saved Store",
         title: promo.title,
-        description: promo.description,
+        // <- Ignore the promotion title
+        // description: promo.description,
+        description: "has posted an ongoing promotion. Click this to check it out",
         image_url: promo.image_url,
         created_at: promo.created_at,
       }));
@@ -137,7 +134,7 @@ export default function NotificationScreen() {
               store_id: newPromo.store_id,
               store_name: storeNameMap[newPromo.store_id] || "Saved Store",
               title: newPromo.title,
-              description: newPromo.description,
+              description: "has posted an ongoing promotion. Click this to check it out",
               image_url: newPromo.image_url,
               created_at: newPromo.created_at,
             },
@@ -157,44 +154,25 @@ export default function NotificationScreen() {
     fetchNotifications().finally(() => setRefreshing(false));
   }, [fetchNotifications]);
 
-  const renderNotification = useCallback(({ item }: { item: PromotionNotification }) => {
-    let createdDate = "";
+  const handleNotificationPress = useCallback(async (notification: PromotionNotification) => {
     try {
-      createdDate = new Date(item.created_at).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      createdDate = "";
+      // Store the store_id in AsyncStorage so discover screen can open it
+      await AsyncStorage.setItem(STORE_TO_OPEN_KEY, notification.store_id);
+      // Navigate to discover screen
+      router.push("/(tabs)/discover");
+    } catch (error) {
+      console.error("Error navigating to store:", error);
     }
+  }, [router]);
 
-    // Photo on left, circular, placeholder if no image
+  const renderNotification = useCallback(({ item }: { item: PromotionNotification }) => {
     return (
-      <View style={styles.notificationCard}>
-        <View style={styles.notificationImageWrapper}>
-          {item.image_url ? (
-            <Image source={{ uri: item.image_url }} style={styles.notificationImageCircular} />
-          ) : (
-            <View style={styles.notificationImageCircularPlaceholder}>
-              <Text style={styles.placeholderIcon}>🎁</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.notificationInfo}>
-          <Text style={styles.notificationTitle}>{item.title}</Text>
-          <Text style={styles.notificationStore}>{item.store_name}</Text>
-          <Text style={styles.notificationDescription}>{item.description}</Text>
-          <Text style={styles.notificationDate}>{createdDate}</Text>
-        </View>
-      </View>
+      <NotificationCard item={item} onPress={handleNotificationPress} />
     );
-  }, []);
+  }, [handleNotificationPress]);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      
       {/* ===== HEADER ===== */}
       <View style={styles.topHeader}>
         <View>
@@ -264,7 +242,7 @@ const styles = StyleSheet.create({
   },
   loaderText: {
     marginTop: 12,
-    color: "#666",
+    color: "#",
   },
   emptyState: {
     marginTop: 32,
@@ -279,68 +257,5 @@ const styles = StyleSheet.create({
   emptyDescription: {
     fontSize: 14,
     color: "#6b6b6b",
-  },
-  notificationCard: {
-    flexDirection: "row",
-    backgroundColor: "#f9fafc",
-    borderRadius: 18,
-    padding: 16,
-    gap: 14,
-    borderWidth: 1,
-    borderColor: "#ebedf3",
-    alignItems: "center",
-  },
-  notificationImageWrapper: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 58,
-    height: 58,
-    marginRight: 12,
-  },
-  notificationImageCircular: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#d9d9d9",
-    resizeMode: "cover",
-    borderWidth: 1,
-    borderColor: "#e7e7e7",
-  },
-  notificationImageCircularPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#e3e6ee",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#e7e7e7",
-  },
-  placeholderIcon: {
-    fontSize: 28,
-  },
-  notificationInfo: {
-    flex: 1,
-  },
-  notificationTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#111",
-    marginBottom: 2,
-  },
-  notificationStore: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#3a82ff",
-    marginBottom: 6,
-  },
-  notificationDescription: {
-    fontSize: 13,
-    color: "#555",
-    marginBottom: 8,
-  },
-  notificationDate: {
-    fontSize: 12,
-    color: "#9a9a9c",
   },
 });

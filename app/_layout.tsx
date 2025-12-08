@@ -7,6 +7,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { LanguageProvider } from '../context/LanguageContext';
 import { UserProfileProvider } from '../context/UserProfileContext';
 import { NotificationProvider } from '../context/NotificationContext';
+// Ensure i18next is initialized early
+import '../services/i18next';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -21,6 +23,7 @@ export default function RootLayout() {
         <NotificationProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <Stack>
+              <Stack.Screen name="landingpage" options={{ headerShown: false }} />
               <Stack.Screen name="onboarding" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />

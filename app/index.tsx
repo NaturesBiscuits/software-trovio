@@ -3,11 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
+const LANDING_PAGE_STORAGE_KEY = '@trovio_landing_page_seen';
 const ONBOARDING_STORAGE_KEY = '@trovio_onboarding_seen';
 
 export default function Index() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSignedIn, setIsSignedIn] = useState<boolean>(false);
+  const [hasSeenLandingPage, setHasSeenLandingPage] = useState<boolean | null>(null);
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -15,13 +17,18 @@ export default function Index() {
 
     const initialize = async () => {
       try {
+        const storedLandingPageFlag = await AsyncStorage.getItem(LANDING_PAGE_STORAGE_KEY);
         const storedOnboardingFlag = await AsyncStorage.getItem(ONBOARDING_STORAGE_KEY);
         if (isMounted) {
+          setHasSeenLandingPage(storedLandingPageFlag === 'true');
           setHasSeenOnboarding(storedOnboardingFlag === 'true');
         }
       } catch (error) {
-        console.warn('Failed to read onboarding flag', error);
-        if (isMounted) setHasSeenOnboarding(false);
+        console.warn('Failed to read storage flags', error);
+        if (isMounted) {
+          setHasSeenLandingPage(false);
+          setHasSeenOnboarding(false);
+        }
       }
 
       try {
@@ -56,15 +63,20 @@ export default function Index() {
     };
   }, []);
 
-  // Show loading state while checking onboarding status
-  if (isLoading || hasSeenOnboarding === null) return null;
+  // Show loading state while checking status
+  if (isLoading || hasSeenLandingPage === null || hasSeenOnboarding === null) return null;
 
-  // Always show onboarding first if user hasn't seen it
+  // Show landing page first if user hasn't seen it
+  if (!hasSeenLandingPage) {
+    return <Redirect href="/landingpage" />;
+  }
+
+  // Show onboarding if user has seen landing page but not onboarding
   if (!hasSeenOnboarding) {
     return <Redirect href="/onboarding" />;
   }
 
-  // After onboarding, redirect based on auth status
+  // After both landing page and onboarding, redirect based on auth status
   return <Redirect href={isSignedIn ? '/(tabs)/discover' : '/(auth)/login'} />;
 }
 

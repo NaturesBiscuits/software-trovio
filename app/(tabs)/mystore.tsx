@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import CreatePromotionModal from "../../components/CreatePromotionModal";
+import EditStoreModal from "../../components/EditStoreModal";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
 import StoreRouteMap from "../../components/StoreRouteMap";
 import VerticalStoreCard from "../../components/VerticalStoreCard";
@@ -52,6 +53,7 @@ export default function MyStoreScreen() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loadingPromotions, setLoadingPromotions] = useState(false);
   const [promoModalVisible, setPromoModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
 
   const flatListRef = useRef<FlatList<string>>(null);
   const onViewRef = useRef(({ viewableItems }: { viewableItems: any[] }) => {
@@ -208,6 +210,27 @@ export default function MyStoreScreen() {
     }
   };
 
+  const handleStoreUpdateSuccess = async () => {
+    // Refresh store data after update
+    if (!selectedStore) return;
+    
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const userId = userData?.user?.id;
+    if (userError || !userId) return;
+
+    const { data, error } = await supabase
+      .from("store_applications")
+      .select("*")
+      .eq("id", selectedStore.id)
+      .eq("user_id", userId)
+      .eq("status", "accepted")
+      .single();
+
+    if (!error && data) {
+      setSelectedStore(data as StoreApplication);
+    }
+  };
+
   if (loadingStore) {
     return (
       <View style={styles.loadingContainer}>
@@ -280,6 +303,14 @@ export default function MyStoreScreen() {
             <Icon name="arrow-back" size={25} color="#000" />
           </TouchableOpacity>
           <Text style={styles.pageTitleWithBackAdjusted}>{selectedStore.store_name || "My Store"}</Text>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => setEditModalVisible(true)}
+            activeOpacity={0.8}
+            hitSlop={{ left: 8, right: 8, top: 8, bottom: 8 }}
+          >
+            <Icon name="create-outline" size={24} color="#1f78ff" />
+          </TouchableOpacity>
         </View>
 
         {/* Carousel Area */}
@@ -472,6 +503,16 @@ export default function MyStoreScreen() {
           onSuccess={handlePromotionSuccess}
         />
       )}
+
+      {/* Edit Store Modal */}
+      {selectedStore && (
+        <EditStoreModal
+          visible={editModalVisible}
+          onClose={() => setEditModalVisible(false)}
+          store={selectedStore}
+          onSuccess={handleStoreUpdateSuccess}
+        />
+      )}
     </View>
   );
 }
@@ -512,6 +553,11 @@ const styles = StyleSheet.create({
     color: "#000",
     flexShrink: 1,
     marginLeft: 4, // Space between icon and text after shifting
+    flex: 1,
+  },
+  editButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   // (Keep old ones for potential other uses)
   pageHeaderContainer: {

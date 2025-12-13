@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -21,14 +22,13 @@ import {
   View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { cacheStores, getCachedStores } from '../../lib/storeCache';
 import { supabase } from '../../lib/supabase';
 import { STORE_TO_OPEN_KEY } from './notification';
 
 // --- YOUR COMPONENTS ---
 import BottomNav from '../../components/BottomNav';
-import DiscoverFlipCard, { StoreApplication, StorePromotion } from '../../components/DiscoverFlipCard';
+import DiscoverFlipCard, { StoreApplication } from '../../components/DiscoverFlipCard';
 import StoreProfileModal from '../../components/StoreProfileModal';
 import StoreRouteMap from '../../components/StoreRouteMap';
 import TopNav from '../../components/TopNav';
@@ -44,6 +44,23 @@ const STORES_PER_PAGE = 5;
 const useLocationTracker = () => {
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [hasLocPerm, setHasLocPerm] = useState(false);
+  const prevCoordsRef = React.useRef<{ latitude: number; longitude: number } | null>(null);
+  const MIN_DISTANCE_METERS = 20; // only update if moved more than this
+
+  const distanceMeters = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const R = 6371000; // metres
+    const dLat = toRad(b.latitude - a.latitude);
+    const dLon = toRad(b.longitude - a.longitude);
+    const lat1 = toRad(a.latitude);
+    const lat2 = toRad(b.latitude);
+
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLon = Math.sin(dLon / 2);
+    const aa = sinDLat * sinDLat + sinDLon * sinDLon * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+    return R * c;
+  };
 
   useEffect(() => {
     let watcher: Location.LocationSubscription | null = null;
@@ -55,12 +72,29 @@ const useLocationTracker = () => {
 
         // Get initial position quickly
         const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        if (location?.coords) setUserCoords(location.coords);
+        if (location?.coords) {
+          setUserCoords(location.coords);
+          prevCoordsRef.current = location.coords;
+        }
 
-        // Watch for changes
+        // Watch for changes (throttle small/noisy updates that happen on resume)
         watcher = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 5 },
-          (pos) => pos?.coords && setUserCoords(pos.coords)
+          (pos) => {
+            if (!pos?.coords) return;
+            const next = pos.coords;
+            const prev = prevCoordsRef.current;
+            if (!prev) {
+              prevCoordsRef.current = next;
+              setUserCoords(next);
+              return;
+            }
+            const moved = distanceMeters(prev, next);
+            if (moved >= MIN_DISTANCE_METERS) {
+              prevCoordsRef.current = next;
+              setUserCoords(next);
+            }
+          }
         );
       } catch (e) {
         console.log('Location Error', e);
@@ -368,54 +402,83 @@ export default function HomeScreen() {
       try {
         // Get first page of IDs
         const pageIds = discoverIds.slice(0, STORES_PER_PAGE);
-        
-        // Check cache first
+
+        // Start with cached stores (if any)
         const cachedStores = await getCachedStores(pageIds);
-        const uncachedIds = pageIds.filter(id => !cachedStores.has(id));
-
-        let storesToUse = Array.from(cachedStores.values());
-
-        // Fetch uncached stores
-        if (uncachedIds.length > 0) {
-          const { data: stores, error: storeErr } = await supabase
-            .from("store_applications")
-            .select("*")
-            .in("id", uncachedIds)
-            .eq("status", "accepted");
-
-          if (!storeErr && stores) {
-            // Cache the new stores
-            await cacheStores(stores);
-            storesToUse = [...storesToUse, ...stores];
-          }
-        }
-
-        // Maintain order from pageIds
-        const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
-        const orderedStores = pageIds
-          .map((id) => storeMap.get(id))
-          .filter((store): store is StoreApplication => store !== undefined);
-
-        // Attach promotions
-        const ids = orderedStores.map((s) => s.id);
-        const { data: promos } = await supabase
-          .from("promotions")
-          .select("*")
-          .in("store_id", ids)
-          .eq("is_active", true)
-          .gt("expires_at", new Date().toISOString());
-
-        const promoMap = new Map<string, StorePromotion>();
-        promos?.forEach((p) => {
-          if (!promoMap.has(p.store_id)) promoMap.set(p.store_id, p);
+        const initialStores: StoreApplication[] = [];
+        const missingIds: string[] = [];
+        pageIds.forEach(id => {
+          const s = cachedStores.get(id);
+          if (s) initialStores.push(s);
+          else missingIds.push(id);
         });
 
-        const finalStores = orderedStores.map((s) => ({
-          ...s,
-          activePromotion: promoMap.get(s.id) || null,
-        }));
+        // Render cached ones immediately
+        const interimOrdered = pageIds
+          .map(id => cachedStores.get(id))
+          .filter((s): s is StoreApplication => Boolean(s));
+        setDiscoverStores(interimOrdered);
 
-        setDiscoverStores(finalStores);
+        // Fetch missing stores one-by-one (small concurrency) so UI can show items progressively
+        const CONCURRENCY = 3;
+        const now = new Date().toISOString();
+
+        const fetchOne = async (id: string) => {
+          try {
+            const { data: store, error: storeErr } = await supabase
+              .from('store_applications')
+              .select('*')
+              .eq('id', id)
+              .eq('status', 'accepted')
+              .single();
+            if (store && !storeErr) {
+              await cacheStores([store]);
+
+              // fetch promotion for this single store
+              const { data: promos } = await supabase
+                .from('promotions')
+                .select('*')
+                .eq('store_id', id)
+                .eq('is_active', true)
+                .gt('expires_at', now);
+
+              const withPromo: StoreApplication = {
+                ...store,
+                activePromotion: promos && promos.length ? promos[0] : null,
+              } as any;
+
+              // Insert in correct position according to pageIds
+              setDiscoverStores(prev => {
+                const map = new Map(prev.map(s => [s.id, s]));
+                map.set(id, withPromo);
+                return pageIds
+                  .map(pid => map.get(pid))
+                  .filter((s): s is StoreApplication => Boolean(s));
+              });
+            }
+          } catch (err) {
+            console.error('Error fetching store', id, err);
+          }
+        };
+
+        // Run with limited concurrency
+        const runQueue = async (ids: string[]) => {
+          let i = 0;
+          const workers: Promise<void>[] = [];
+          const next = async () => {
+            if (i >= ids.length) return;
+            const id = ids[i++];
+            await fetchOne(id);
+            await next();
+          };
+          for (let w = 0; w < Math.min(CONCURRENCY, ids.length); w++) {
+            workers.push(next());
+          }
+          await Promise.all(workers);
+        };
+
+        if (missingIds.length > 0) await runQueue(missingIds);
+
         setHasMoreDiscover(discoverIds.length > STORES_PER_PAGE);
         setDiscoverPage(1);
       } catch (error) {
@@ -444,52 +507,68 @@ export default function HomeScreen() {
         return;
       }
 
-      // Check cache first
+      // Check cache first and show cached items immediately
       const cachedStores = await getCachedStores(pageIds);
-      const uncachedIds = pageIds.filter(id => !cachedStores.has(id));
+      const interim = pageIds
+        .map(id => cachedStores.get(id))
+        .filter((s): s is StoreApplication => Boolean(s));
 
-      let storesToUse = Array.from(cachedStores.values());
-
-      // Fetch uncached stores
-      if (uncachedIds.length > 0) {
-        const { data: stores, error: storeErr } = await supabase
-          .from("store_applications")
-          .select("*")
-          .in("id", uncachedIds)
-          .eq("status", "accepted");
-
-        if (!storeErr && stores) {
-          await cacheStores(stores);
-          storesToUse = [...storesToUse, ...stores];
-        }
-      }
-
-      // Maintain order
-      const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
-      const orderedStores = pageIds
-        .map((id) => storeMap.get(id))
-        .filter((store): store is StoreApplication => store !== undefined);
-
-      // Attach promotions
-      const ids = orderedStores.map((s) => s.id);
-      const { data: promos } = await supabase
-        .from("promotions")
-        .select("*")
-        .in("store_id", ids)
-        .eq("is_active", true)
-        .gt("expires_at", new Date().toISOString());
-
-      const promoMap = new Map<string, StorePromotion>();
-      promos?.forEach((p) => {
-        if (!promoMap.has(p.store_id)) promoMap.set(p.store_id, p);
+      setDiscoverStores(prev => {
+        const map = new Map<string, StoreApplication>();
+        prev.forEach(s => map.set(s.id, s));
+        interim.forEach(s => { if (!map.has(s.id)) map.set(s.id, s); });
+        return Array.from(map.values());
       });
 
-      const finalStores = orderedStores.map((s) => ({
-        ...s,
-        activePromotion: promoMap.get(s.id) || null,
-      }));
+      const missingIds = pageIds.filter(id => !cachedStores.has(id));
+      const CONCURRENCY = 3;
+      const now = new Date().toISOString();
 
-      setDiscoverStores(prev => [...prev, ...finalStores]);
+      const fetchOne = async (id: string) => {
+        try {
+          const { data: store, error: storeErr } = await supabase
+            .from('store_applications')
+            .select('*')
+            .eq('id', id)
+            .eq('status', 'accepted')
+            .single();
+          if (store && !storeErr) {
+            await cacheStores([store]);
+            const { data: promos } = await supabase
+              .from('promotions')
+              .select('*')
+              .eq('store_id', id)
+              .eq('is_active', true)
+              .gt('expires_at', now);
+
+            const withPromo: StoreApplication = { ...store, activePromotion: promos && promos.length ? promos[0] : null } as any;
+
+            setDiscoverStores(prev => {
+              // Avoid duplicates
+              if (prev.find(p => p.id === id)) return prev.map(p => p.id === id ? withPromo : p);
+              return [...prev, withPromo];
+            });
+          }
+        } catch (err) {
+          console.error('Error fetching store', id, err);
+        }
+      };
+
+      const runQueue = async (ids: string[]) => {
+        let i = 0;
+        const workers: Promise<void>[] = [];
+        const next = async () => {
+          if (i >= ids.length) return;
+          const id = ids[i++];
+          await fetchOne(id);
+          await next();
+        };
+        for (let w = 0; w < Math.min(CONCURRENCY, ids.length); w++) workers.push(next());
+        await Promise.all(workers);
+      };
+
+      if (missingIds.length > 0) await runQueue(missingIds);
+
       setDiscoverPage(prev => prev + 1);
       setHasMoreDiscover(endIndex < discoverIds.length);
     } catch (error) {
@@ -511,53 +590,61 @@ export default function HomeScreen() {
       try {
         // Get first page of IDs
         const pageIds = forYouIds.slice(0, STORES_PER_PAGE);
-        
-        // Check cache first
+
+        // Use cached stores first
         const cachedStores = await getCachedStores(pageIds);
-        const uncachedIds = pageIds.filter(id => !cachedStores.has(id));
+        const interimOrdered = pageIds
+          .map(id => cachedStores.get(id))
+          .filter((s): s is StoreApplication => Boolean(s));
+        setForYouStores(interimOrdered);
 
-        let storesToUse = Array.from(cachedStores.values());
+        const missingIds = pageIds.filter(id => !cachedStores.has(id));
+        const CONCURRENCY = 3;
+        const now = new Date().toISOString();
 
-        // Fetch uncached stores
-        if (uncachedIds.length > 0) {
-          const { data: stores, error: storeErr } = await supabase
-            .from("store_applications")
-            .select("*")
-            .in("id", uncachedIds)
-            .eq("status", "accepted");
+        const fetchOne = async (id: string) => {
+          try {
+            const { data: store, error: storeErr } = await supabase
+              .from('store_applications')
+              .select('*')
+              .eq('id', id)
+              .eq('status', 'accepted')
+              .single();
+            if (store && !storeErr) {
+              await cacheStores([store]);
+              const { data: promos } = await supabase
+                .from('promotions')
+                .select('*')
+                .eq('store_id', id)
+                .eq('is_active', true)
+                .gt('expires_at', now);
 
-          if (!storeErr && stores) {
-            await cacheStores(stores);
-            storesToUse = [...storesToUse, ...stores];
+              const withPromo: StoreApplication = { ...store, activePromotion: promos && promos.length ? promos[0] : null } as any;
+              setForYouStores(prev => {
+                if (prev.find(p => p.id === id)) return prev.map(p => p.id === id ? withPromo : p);
+                return [...prev, withPromo];
+              });
+            }
+          } catch (err) {
+            console.error('Error fetching for-you store', id, err);
           }
-        }
+        };
 
-        // Maintain order from pageIds
-        const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
-        const orderedStores = pageIds
-          .map((id) => storeMap.get(id))
-          .filter((store): store is StoreApplication => store !== undefined);
+        const runQueue = async (ids: string[]) => {
+          let i = 0;
+          const workers: Promise<void>[] = [];
+          const next = async () => {
+            if (i >= ids.length) return;
+            const id = ids[i++];
+            await fetchOne(id);
+            await next();
+          };
+          for (let w = 0; w < Math.min(CONCURRENCY, ids.length); w++) workers.push(next());
+          await Promise.all(workers);
+        };
 
-        // Attach promotions
-        const ids = orderedStores.map((s) => s.id);
-        const { data: promos } = await supabase
-          .from("promotions")
-          .select("*")
-          .in("store_id", ids)
-          .eq("is_active", true)
-          .gt("expires_at", new Date().toISOString());
+        if (missingIds.length > 0) await runQueue(missingIds);
 
-        const promoMap = new Map<string, StorePromotion>();
-        promos?.forEach((p) => {
-          if (!promoMap.has(p.store_id)) promoMap.set(p.store_id, p);
-        });
-
-        const finalStores = orderedStores.map((s) => ({
-          ...s,
-          activePromotion: promoMap.get(s.id) || null,
-        }));
-
-        setForYouStores(finalStores);
         setHasMoreForYou(forYouIds.length > STORES_PER_PAGE);
         setForYouPage(1);
       } catch (error) {
@@ -586,52 +673,66 @@ export default function HomeScreen() {
         return;
       }
 
-      // Check cache first
+      // Check cache first and show cached items immediately
       const cachedStores = await getCachedStores(pageIds);
-      const uncachedIds = pageIds.filter(id => !cachedStores.has(id));
+      const interim = pageIds
+        .map(id => cachedStores.get(id))
+        .filter((s): s is StoreApplication => Boolean(s));
 
-      let storesToUse = Array.from(cachedStores.values());
-
-      // Fetch uncached stores
-      if (uncachedIds.length > 0) {
-        const { data: stores, error: storeErr } = await supabase
-          .from("store_applications")
-          .select("*")
-          .in("id", uncachedIds)
-          .eq("status", "accepted");
-
-        if (!storeErr && stores) {
-          await cacheStores(stores);
-          storesToUse = [...storesToUse, ...stores];
-        }
-      }
-
-      // Maintain order
-      const storeMap = new Map(storesToUse.map((s) => [s.id, s]));
-      const orderedStores = pageIds
-        .map((id) => storeMap.get(id))
-        .filter((store): store is StoreApplication => store !== undefined);
-
-      // Attach promotions
-      const ids = orderedStores.map((s) => s.id);
-      const { data: promos } = await supabase
-        .from("promotions")
-        .select("*")
-        .in("store_id", ids)
-        .eq("is_active", true)
-        .gt("expires_at", new Date().toISOString());
-
-      const promoMap = new Map<string, StorePromotion>();
-      promos?.forEach((p) => {
-        if (!promoMap.has(p.store_id)) promoMap.set(p.store_id, p);
+      setForYouStores(prev => {
+        const map = new Map<string, StoreApplication>();
+        prev.forEach(s => map.set(s.id, s));
+        interim.forEach(s => { if (!map.has(s.id)) map.set(s.id, s); });
+        return Array.from(map.values());
       });
 
-      const finalStores = orderedStores.map((s) => ({
-        ...s,
-        activePromotion: promoMap.get(s.id) || null,
-      }));
+      const missingIds = pageIds.filter(id => !cachedStores.has(id));
+      const CONCURRENCY = 3;
+      const now = new Date().toISOString();
 
-      setForYouStores(prev => [...prev, ...finalStores]);
+      const fetchOne = async (id: string) => {
+        try {
+          const { data: store, error: storeErr } = await supabase
+            .from('store_applications')
+            .select('*')
+            .eq('id', id)
+            .eq('status', 'accepted')
+            .single();
+          if (store && !storeErr) {
+            await cacheStores([store]);
+            const { data: promos } = await supabase
+              .from('promotions')
+              .select('*')
+              .eq('store_id', id)
+              .eq('is_active', true)
+              .gt('expires_at', now);
+
+            const withPromo: StoreApplication = { ...store, activePromotion: promos && promos.length ? promos[0] : null } as any;
+            setForYouStores(prev => {
+              if (prev.find(p => p.id === id)) return prev.map(p => p.id === id ? withPromo : p);
+              return [...prev, withPromo];
+            });
+          }
+        } catch (err) {
+          console.error('Error fetching for-you store', id, err);
+        }
+      };
+
+      const runQueue = async (ids: string[]) => {
+        let i = 0;
+        const workers: Promise<void>[] = [];
+        const next = async () => {
+          if (i >= ids.length) return;
+          const id = ids[i++];
+          await fetchOne(id);
+          await next();
+        };
+        for (let w = 0; w < Math.min(CONCURRENCY, ids.length); w++) workers.push(next());
+        await Promise.all(workers);
+      };
+
+      if (missingIds.length > 0) await runQueue(missingIds);
+
       setForYouPage(prev => prev + 1);
       setHasMoreForYou(endIndex < forYouIds.length);
     } catch (error) {

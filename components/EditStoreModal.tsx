@@ -207,6 +207,29 @@ export default function EditStoreModal({
   const handleDateChange = (event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
       setShowDatePicker(false);
+      if (selectedDate && event.type !== 'dismissed') {
+        setNewExpirationDate(selectedDate);
+        // Show confirmation with days info on Android
+        if (selectedPromoForExtension) {
+          const currentExpiry = new Date(selectedPromoForExtension.expires_at);
+          const daysDiff = Math.floor(
+            (selectedDate.getTime() - currentExpiry.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          if (daysDiff !== 0) {
+            Alert.alert(
+              'Date Updated',
+              `Promotion will be ${daysDiff > 0 ? 'extended' : 'reduced'} by ${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''}.`,
+              [
+                { text: 'Cancel', onPress: () => setNewExpirationDate(currentExpiry), style: 'cancel' },
+                { text: 'Confirm', onPress: confirmExtendPromotion },
+              ]
+            );
+          } else {
+            confirmExtendPromotion();
+          }
+        }
+      }
+      return;
     }
     if (selectedDate && event.type !== 'dismissed') {
       setNewExpirationDate(selectedDate);
@@ -532,8 +555,21 @@ export default function EditStoreModal({
           </View>
         </ScrollView>
 
-        {/* Date Picker for Extension */}
-        {showDatePicker && (
+        {/* Date Picker for Extension - Android */}
+        {Platform.OS === 'android' && showDatePicker && (
+          <>
+            <DateTimePicker
+              value={newExpirationDate}
+              mode="date"
+              display="default"
+              onChange={handleDateChange}
+              minimumDate={new Date()}
+            />
+          </>
+        )}
+
+        {/* Date Picker for Extension - iOS */}
+        {Platform.OS === 'ios' && showDatePicker && (
           <Modal
             visible={showDatePicker}
             transparent
@@ -541,15 +577,75 @@ export default function EditStoreModal({
             onRequestClose={() => setShowDatePicker(false)}
           >
             <View style={styles.datePickerOverlay}>
+              <TouchableOpacity
+                style={styles.datePickerBackdrop}
+                activeOpacity={1}
+                onPress={() => {
+                  setShowDatePicker(false);
+                  setSelectedPromoForExtension(null);
+                }}
+              />
               <View style={styles.datePickerContainer}>
-                <Text style={styles.datePickerTitle}>Extend Promotion Expiration</Text>
-                <DateTimePicker
-                  value={newExpirationDate}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={handleDateChange}
-                  minimumDate={new Date()}
-                />
+                <ScrollView 
+                  style={styles.datePickerScrollView}
+                  contentContainerStyle={styles.datePickerScrollContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Text style={styles.datePickerTitle}>Extend Promotion Expiration</Text>
+                  
+                  {selectedPromoForExtension && (
+                    <View style={styles.dateInfoContainer}>
+                      <View style={styles.dateInfoRow}>
+                        <Text style={styles.dateInfoLabel}>Current expiration:</Text>
+                        <Text style={styles.dateInfoValue}>
+                          {new Date(selectedPromoForExtension.expires_at).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </Text>
+                      </View>
+                      <View style={styles.dateInfoRow}>
+                        <Text style={styles.dateInfoLabel}>New expiration:</Text>
+                        <Text style={[styles.dateInfoValue, styles.dateInfoValueNew]}>
+                          {newExpirationDate.toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </Text>
+                      </View>
+                      {(() => {
+                        const currentExpiry = new Date(selectedPromoForExtension.expires_at);
+                        const daysDiff = Math.floor(
+                          (newExpirationDate.getTime() - currentExpiry.getTime()) / (1000 * 60 * 60 * 24)
+                        );
+                        return daysDiff !== 0 ? (
+                          <View style={styles.daysExtendedContainer}>
+                            <Text style={styles.daysExtendedText}>
+                              {daysDiff > 0 ? '+' : ''}{daysDiff} day{daysDiff !== 1 ? 's' : ''} {daysDiff > 0 ? 'extended' : 'reduced'}
+                            </Text>
+                          </View>
+                        ) : null;
+                      })()}
+                    </View>
+                  )}
+                  
+                  <View style={styles.datePickerContent}>
+                    <DateTimePicker
+                      value={newExpirationDate}
+                      mode="date"
+                      display="spinner"
+                      onChange={handleDateChange}
+                      minimumDate={new Date()}
+                      style={styles.iosDatePicker}
+                      textColor="#000"
+                      themeVariant="light"
+                      locale="en_US"
+                    />
+                  </View>
+                </ScrollView>
+                
                 <View style={styles.datePickerActions}>
                   <TouchableOpacity
                     style={styles.datePickerCancel}
@@ -809,8 +905,11 @@ const styles = StyleSheet.create({
   },
   datePickerOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+  },
+  datePickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   datePickerContainer: {
     backgroundColor: '#fff',
@@ -818,11 +917,69 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    maxHeight: '80%',
+  },
+  datePickerScrollView: {
+    maxHeight: 400,
+  },
+  datePickerScrollContent: {
+    paddingBottom: 10,
+  },
+  datePickerContent: {
+    height: 216,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 16,
+    backgroundColor: '#fff',
+    overflow: 'visible',
+  },
+  iosDatePicker: {
+    width: '100%',
+    height: 216,
+    backgroundColor: '#fff',
   },
   datePickerTitle: {
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 16,
+    textAlign: 'center',
+  },
+  dateInfoContainer: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  dateInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  dateInfoLabel: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  dateInfoValue: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '600',
+  },
+  dateInfoValueNew: {
+    color: '#1f78ff',
+  },
+  daysExtendedContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  daysExtendedText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1f78ff',
     textAlign: 'center',
   },
   datePickerActions: {

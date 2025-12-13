@@ -494,13 +494,17 @@ export default function ProfessionalToolsAnalyticsScreen() {
               <Text style={styles.statTitle}>Total Stores</Text>
             </View>
 
-            <View style={styles.statCard}>
+            <TouchableOpacity
+              style={styles.statCard}
+              onPress={() => router.push("/(tabs)/activepromotions")}
+              activeOpacity={0.7}
+            >
               <View style={[styles.statIconContainer, { backgroundColor: '#4caf5015' }]}>
                 <Icon name="megaphone" size={24} color="#4caf50" />
               </View>
               <Text style={styles.statValue}>{stats.activePromotions.toLocaleString()}</Text>
               <Text style={styles.statTitle}>Active Promotions</Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* Engagement Metrics Section */}

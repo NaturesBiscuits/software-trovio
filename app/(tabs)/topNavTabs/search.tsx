@@ -20,6 +20,7 @@ import BottomNav from "../../../components/BottomNav";
 import { supabase } from "../../../lib/supabase";
 import { useNavigation } from "@react-navigation/native";
 import StoreProfileModal from "../../../components/StoreProfileModal";
+import { getCachedImageUrls, getCachedImageUrl } from "../../../lib/imageCache";
 
 // --- Type Definitions ---
 interface StoreApplication {
@@ -78,11 +79,34 @@ export default function SearchScreen() {
   const sidePanelAnim = useRef(new Animated.Value(-SIDEPANEL_WIDTH)).current;
 
   // --- Utility Functions ---
+  // Note: getStorageUrl is kept for backward compatibility but StoreCard now uses getCachedImageUrls
   const getStorageUrl = (filename: string | null, userId: string | null): string | null => {
     if (!filename || !userId) return null;
     const storagePath = `applications/${userId}/store_photos/${filename}`;
     const { data } = supabase.storage.from("tus").getPublicUrl(storagePath);
     return data.publicUrl;
+  };
+
+  // Helper function to load photos from both buckets (tus and user-uploaded-photos)
+  const loadStorePhotos = async (photos_url: string[] | null, userId: string | null): Promise<string[]> => {
+    if (!photos_url?.length || !userId) return [];
+    
+    // Try loading from tus bucket first (for old photos)
+    const tusUrls = await getCachedImageUrls(photos_url, userId, 'tus');
+    const results: (string | null)[] = [];
+    
+    // For each photo, if it failed in tus bucket, try user-uploaded-photos bucket
+    for (let i = 0; i < photos_url.length; i++) {
+      if (tusUrls[i]) {
+        results[i] = tusUrls[i];
+      } else {
+        // Try user-uploaded-photos bucket
+        const uploadedUrl = await getCachedImageUrl(photos_url[i], userId, 'user-uploaded-photos');
+        results[i] = uploadedUrl;
+      }
+    }
+    
+    return results.filter((url): url is string => Boolean(url));
   };
 
   const saveRecents = async (recents: string[]) => {
@@ -305,8 +329,49 @@ export default function SearchScreen() {
   }
 
   function StoreCard({ store }: { store: StoreApplication }) {
-    const photoFilename = store.photos_url?.[0] || null;
-    const photoUrl = getStorageUrl(photoFilename, store.user_id);
+    const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+    const [imageLoading, setImageLoading] = useState(true);
+    const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
+    // Load all photos using the helper function that tries both buckets
+    useEffect(() => {
+      let isActive = true;
+      const loadPhotos = async () => {
+        if (store.photos_url?.length && store.user_id) {
+          setImageLoading(true);
+          try {
+            const urls = await loadStorePhotos(store.photos_url, store.user_id);
+            if (!isActive) return;
+            setPhotoUrls(urls);
+            setCurrentPhotoIndex(0);
+          } catch (error) {
+            console.error("Error loading store photos:", error);
+            if (isActive) setPhotoUrls([]);
+          } finally {
+            if (isActive) setImageLoading(false);
+          }
+        } else {
+          setPhotoUrls([]);
+          setImageLoading(false);
+        }
+      };
+
+      loadPhotos();
+      return () => {
+        isActive = false;
+      };
+    }, [store.photos_url, store.user_id]);
+
+    // Auto-rotate through photos if multiple exist
+    useEffect(() => {
+      if (photoUrls.length <= 1) return;
+
+      const interval = setInterval(() => {
+        setCurrentPhotoIndex((prev) => (prev + 1) % photoUrls.length);
+      }, 3000);
+
+      return () => clearInterval(interval);
+    }, [photoUrls.length]);
 
     return (
       <TouchableOpacity
@@ -317,13 +382,32 @@ export default function SearchScreen() {
           addRecentStore(store);
         }}
       >
-        {photoUrl ? (
-          <Image source={{ uri: photoUrl }} style={styles.storeImage} />
-        ) : (
-          <View style={styles.storeImagePlaceholder}>
-            <Icon name="image-outline" size={40} color="#999" />
-          </View>
-        )}
+        <View style={styles.storeImageContainer}>
+          {imageLoading ? (
+            <View style={styles.storeImagePlaceholder}>
+              <ActivityIndicator size="small" color="#9333ea" />
+            </View>
+          ) : photoUrls.length > 0 ? (
+            <>
+              <Image 
+                source={{ uri: photoUrls[currentPhotoIndex] }} 
+                style={styles.storeImage}
+                resizeMode="cover"
+              />
+              {photoUrls.length > 1 && (
+                <View style={styles.photoIndicator}>
+                  <Text style={styles.photoIndicatorText}>
+                    {currentPhotoIndex + 1} / {photoUrls.length}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.storeImagePlaceholder}>
+              <Icon name="image-outline" size={40} color="#999" />
+            </View>
+          )}
+        </View>
 
         <View style={styles.storeContent}>
           <Text style={styles.storeName}>
@@ -350,6 +434,99 @@ export default function SearchScreen() {
               {store.tags.length > 3 && (
                 <Text style={styles.moreTagsText}>+{store.tags.length - 3}</Text>
               )}
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  function RecentStoreCard({ store, onPress }: { store: StoreApplication; onPress: () => void }) {
+    const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+    const [imageLoading, setImageLoading] = useState(true);
+    const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
+    // Load all photos using the helper function that tries both buckets
+    useEffect(() => {
+      let isActive = true;
+      const loadPhotos = async () => {
+        if (store.photos_url?.length && store.user_id) {
+          setImageLoading(true);
+          try {
+            const urls = await loadStorePhotos(store.photos_url, store.user_id);
+            if (!isActive) return;
+            setPhotoUrls(urls);
+            setCurrentPhotoIndex(0);
+          } catch (error) {
+            console.error("Error loading recent store photos:", error);
+            if (isActive) setPhotoUrls([]);
+          } finally {
+            if (isActive) setImageLoading(false);
+          }
+        } else {
+          setPhotoUrls([]);
+          setImageLoading(false);
+        }
+      };
+
+      loadPhotos();
+      return () => {
+        isActive = false;
+      };
+    }, [store.photos_url, store.user_id]);
+
+    // Auto-rotate through photos if multiple exist
+    useEffect(() => {
+      if (photoUrls.length <= 1) return;
+
+      const interval = setInterval(() => {
+        setCurrentPhotoIndex((prev) => (prev + 1) % photoUrls.length);
+      }, 3000);
+
+      return () => clearInterval(interval);
+    }, [photoUrls.length]);
+
+    return (
+      <TouchableOpacity
+        style={styles.recentStoreCard}
+        onPress={onPress}
+      >
+        <View style={styles.recentStoreImageContainer}>
+          {imageLoading ? (
+            <View style={styles.recentStoreImagePlaceholder}>
+              <ActivityIndicator size="small" color="#9333ea" />
+            </View>
+          ) : photoUrls.length > 0 ? (
+            <>
+              <Image
+                source={{ uri: photoUrls[currentPhotoIndex] }}
+                style={styles.recentStoreImage}
+                resizeMode="cover"
+              />
+              {photoUrls.length > 1 && (
+                <View style={styles.recentPhotoIndicator}>
+                  <Text style={styles.recentPhotoIndicatorText}>
+                    {currentPhotoIndex + 1} / {photoUrls.length}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.recentStoreImagePlaceholder}>
+              <Icon name="image-outline" size={30} color="#999" />
+            </View>
+          )}
+        </View>
+        <View style={styles.recentStoreContent}>
+          <Text style={styles.recentStoreName} numberOfLines={1}>
+            {store.store_name || "Unnamed Store"}
+          </Text>
+          {store.address && (
+            <View style={styles.recentStoreAddressContainer}>
+              <Icon name="location-outline" size={12} color="#be3e3e" />
+              <Text style={styles.recentStoreAddress} numberOfLines={1}>
+                {store.address}
+              </Text>
             </View>
           )}
         </View>
@@ -593,38 +770,14 @@ export default function SearchScreen() {
               contentContainerStyle={styles.recentStoresContainer}
             >
               {recentStores.map((store) => (
-                <TouchableOpacity
+                <RecentStoreCard
                   key={store.id}
-                  style={styles.recentStoreCard}
+                  store={store}
                   onPress={() => {
                     setSelectedStore(store);
                     addRecentStore(store);
                   }}
-                >
-                  {getStorageUrl(store.photos_url?.[0] || null, store.user_id) ? (
-                    <Image
-                      source={{ uri: getStorageUrl(store.photos_url?.[0] || null, store.user_id) || '' }}
-                      style={styles.recentStoreImage}
-                    />
-                  ) : (
-                    <View style={styles.recentStoreImagePlaceholder}>
-                      <Icon name="image-outline" size={30} color="#999" />
-                    </View>
-                  )}
-                  <View style={styles.recentStoreContent}>
-                    <Text style={styles.recentStoreName} numberOfLines={1}>
-                      {store.store_name || "Unnamed Store"}
-                    </Text>
-                    {store.address && (
-                      <View style={styles.recentStoreAddressContainer}>
-                        <Icon name="location-outline" size={12} color="#be3e3e" />
-                        <Text style={styles.recentStoreAddress} numberOfLines={1}>
-                          {store.address}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
+                />
               ))}
             </ScrollView>
           </View>
@@ -937,6 +1090,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
+  storeImageContainer: {
+    position: "relative",
+    width: 120,
+    height: 120,
+  },
   storeImage: {
     width: 120,
     height: 120,
@@ -948,6 +1106,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F0F0",
     justifyContent: "center",
     alignItems: "center",
+  },
+  photoIndicator: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  photoIndicatorText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
   },
   storeContent: {
     flex: 1,
@@ -1101,6 +1273,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0E0E0",
   },
+  recentStoreImageContainer: {
+    position: "relative",
+    width: "100%",
+    height: 100,
+  },
   recentStoreImage: {
     width: "100%",
     height: 100,
@@ -1112,6 +1289,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F0F0",
     justifyContent: "center",
     alignItems: "center",
+  },
+  recentPhotoIndicator: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  recentPhotoIndicatorText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "600",
   },
   recentStoreContent: {
     padding: 10,

@@ -20,7 +20,7 @@ import EditStoreModal from "../../components/EditStoreModal";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
 import StoreRouteMap from "../../components/StoreRouteMap";
 import VerticalStoreCard from "../../components/VerticalStoreCard";
-import { getCachedImageUrls } from "../../lib/imageCache";
+import { getCachedImageUrl, getCachedImageUrls } from "../../lib/imageCache";
 import { supabase } from "../../lib/supabase";
 
 const { width: deviceWidth, height: deviceHeight } = Dimensions.get("window");
@@ -51,6 +51,8 @@ export default function MyStoreScreen() {
   const [carouselIndex, setCarouselIndex] = useState(0);
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [promotionImageUrls, setPromotionImageUrls] = useState<Map<string, string | null>>(new Map());
+  const [loadingPromotionImages, setLoadingPromotionImages] = useState<Set<string>>(new Set());
   const [loadingPromotions, setLoadingPromotions] = useState(false);
   const [promoModalVisible, setPromoModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -139,6 +141,7 @@ export default function MyStoreScreen() {
     const fetchPromotions = async () => {
       if (!selectedStore) {
         setPromotions([]);
+        setPromotionImageUrls(new Map());
         return;
       }
 
@@ -151,7 +154,49 @@ export default function MyStoreScreen() {
           .order("created_at", { ascending: false });
 
         if (error) throw error;
-        setPromotions((data as Promotion[]) || []);
+        const promotionsData = (data as Promotion[]) || [];
+        setPromotions(promotionsData);
+
+        // Load image URLs for all promotions in parallel
+        const loadPromotionImages = async () => {
+          // Initialize loading state for all promotions with images
+          const initialLoadingSet = new Set<string>();
+          promotionsData.forEach((promo) => {
+            if (promo.image_url && promo.user_id) {
+              initialLoadingSet.add(promo.id);
+            }
+          });
+          setLoadingPromotionImages(initialLoadingSet);
+
+          // Load all images in parallel
+          const imagePromises = promotionsData.map(async (promo) => {
+            if (!promo.image_url || !promo.user_id) {
+              return { id: promo.id, url: null };
+            }
+
+            try {
+              const url = await getCachedImageUrl(promo.image_url, promo.user_id, 'tus');
+              return { id: promo.id, url };
+            } catch (error) {
+              console.error(`Error loading image for promotion ${promo.id}:`, error);
+              return { id: promo.id, url: null };
+            }
+          });
+
+          // Wait for all images to load
+          const results = await Promise.all(imagePromises);
+          
+          // Update state with all loaded URLs
+          const urlMap = new Map<string, string | null>();
+          results.forEach(({ id, url }) => {
+            urlMap.set(id, url);
+          });
+
+          setPromotionImageUrls(urlMap);
+          setLoadingPromotionImages(new Set()); // Clear loading state
+        };
+
+        loadPromotionImages();
       } catch (error) {
         console.error("Error fetching promotions:", error);
       } finally {
@@ -187,7 +232,46 @@ export default function MyStoreScreen() {
             .select("*")
             .eq("store_id", selectedStore.id)
             .order("created_at", { ascending: false });
-          if (data) setPromotions(data as Promotion[]);
+          if (data) {
+            const promotionsData = data as Promotion[];
+            setPromotions(promotionsData);
+
+            // Reload image URLs
+            const loadPromotionImages = async () => {
+              const initialLoadingSet = new Set<string>();
+              promotionsData.forEach((promo) => {
+                if (promo.image_url && promo.user_id) {
+                  initialLoadingSet.add(promo.id);
+                }
+              });
+              setLoadingPromotionImages(initialLoadingSet);
+
+              const imagePromises = promotionsData.map(async (promo) => {
+                if (!promo.image_url || !promo.user_id) {
+                  return { id: promo.id, url: null };
+                }
+
+                try {
+                  const url = await getCachedImageUrl(promo.image_url, promo.user_id, 'tus');
+                  return { id: promo.id, url };
+                } catch (error) {
+                  console.error(`Error loading image for promotion ${promo.id}:`, error);
+                  return { id: promo.id, url: null };
+                }
+              });
+
+              const results = await Promise.all(imagePromises);
+              const urlMap = new Map<string, string | null>();
+              results.forEach(({ id, url }) => {
+                urlMap.set(id, url);
+              });
+
+              setPromotionImageUrls(urlMap);
+              setLoadingPromotionImages(new Set());
+            };
+
+            loadPromotionImages();
+          }
         }
       }
     }, 60000); // Check every minute
@@ -206,7 +290,44 @@ export default function MyStoreScreen() {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      setPromotions(data as Promotion[]);
+      const promotionsData = data as Promotion[];
+      setPromotions(promotionsData);
+
+      // Load image URLs for new promotions
+      const loadPromotionImages = async () => {
+        const initialLoadingSet = new Set<string>();
+        promotionsData.forEach((promo) => {
+          if (promo.image_url && promo.user_id) {
+            initialLoadingSet.add(promo.id);
+          }
+        });
+        setLoadingPromotionImages(initialLoadingSet);
+
+        const imagePromises = promotionsData.map(async (promo) => {
+          if (!promo.image_url || !promo.user_id) {
+            return { id: promo.id, url: null };
+          }
+
+          try {
+            const url = await getCachedImageUrl(promo.image_url, promo.user_id, 'tus');
+            return { id: promo.id, url };
+          } catch (error) {
+            console.error(`Error loading image for promotion ${promo.id}:`, error);
+            return { id: promo.id, url: null };
+          }
+        });
+
+        const results = await Promise.all(imagePromises);
+        const urlMap = new Map<string, string | null>();
+        results.forEach(({ id, url }) => {
+          urlMap.set(id, url);
+        });
+
+        setPromotionImageUrls(urlMap);
+        setLoadingPromotionImages(new Set());
+      };
+
+      loadPromotionImages();
     }
   };
 
@@ -438,17 +559,28 @@ export default function MyStoreScreen() {
               const timeRemaining = expiresAt.getTime() - Date.now();
               const hoursRemaining = Math.floor(timeRemaining / (1000 * 60 * 60));
               const daysRemaining = Math.floor(hoursRemaining / 24);
+              const imageUrl = promotionImageUrls.get(promo.id);
+              const isLoadingImage = loadingPromotionImages.has(promo.id);
 
               return (
                 <View key={promo.id} style={styles.promotionItem}>
-                  {promo.image_url && (
+                  {isLoadingImage ? (
+                    <View style={[styles.promoImage, styles.promoImageLoading]}>
+                      <ActivityIndicator size="small" color="#468dff" />
+                    </View>
+                  ) : imageUrl ? (
                     <ExpoImage
-                      source={{ uri: promo.image_url }}
+                      source={{ uri: imageUrl }}
                       style={styles.promoImage}
                       contentFit="cover"
                       cachePolicy="memory-disk"
+                      transition={200}
                     />
-                  )}
+                  ) : promo.image_url ? (
+                    <View style={[styles.promoImage, styles.promoImageFallback]}>
+                      <Icon name="image-outline" size={32} color="#bbb" />
+                    </View>
+                  ) : null}
                   <View style={styles.promoContent}>
                     <View style={styles.promoHeader}>
                       <Text style={styles.promoTitle}>{promo.title}</Text>
@@ -762,6 +894,15 @@ const styles = StyleSheet.create({
   promoImage: {
     width: "100%",
     height: 180,
+    backgroundColor: "#f5f5f5",
+  },
+  promoImageLoading: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  promoImageFallback: {
+    justifyContent: "center",
+    alignItems: "center",
     backgroundColor: "#f5f5f5",
   },
   promoContent: {

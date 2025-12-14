@@ -617,6 +617,14 @@ export default function MyStoreScreen() {
                           : "Expiring soon"}
                       </Text>
                     </View>
+                    <TouchableOpacity
+                      style={styles.boostButton}
+                      onPress={() => router.push("/(tabs)/boostpromotions")}
+                      activeOpacity={0.8}
+                    >
+                      <Icon name="rocket-outline" size={16} color="#1f78ff" />
+                      <Text style={styles.boostButtonText}>Boost Promotion</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               );
@@ -957,6 +965,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     marginLeft: 4,
+  },
+  boostButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#e8f0fe",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#1f78ff",
+  },
+  boostButtonText: {
+    color: "#1f78ff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 6,
   },
   modalOverlay: {
     flex: 1,

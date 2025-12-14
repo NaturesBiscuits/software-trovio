@@ -6,7 +6,9 @@ import {
   Text, 
   TouchableOpacity, 
   View, 
-  Image 
+  Image,
+  Platform,
+  useWindowDimensions
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -16,6 +18,7 @@ const ONBOARDING_STORAGE_KEY = '@trovio_onboarding_seen';
 
 export default function OnboardingScreen() {
   const [selectedButton, setSelectedButton] = useState<'login' | 'signup' | null>(null);
+  const { width } = useWindowDimensions();
 
   const goToAuth = async (path: '/(auth)/login' | '/(auth)/signup') => {
     try {
@@ -41,13 +44,31 @@ export default function OnboardingScreen() {
       <StatusBar barStyle="light-content" />
 
       {/* Back Button */}
-      <TouchableOpacity 
-        style={styles.backButton}
-        onPress={handleBack}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <Icon name="arrow-back" size={30} color="#FFFFFF" />
-      </TouchableOpacity>
+      <View style={[
+        styles.backButtonWrapper,
+        {
+          marginTop: (Platform.OS === 'ios' ? 32 : 38), // moved lower (increased value)
+        }
+      ]}>
+        <TouchableOpacity 
+          style={[
+            styles.backButton,
+            {
+              width: width < 350 ? 36 : 42,
+              height: width < 350 ? 36 : 42,
+              borderRadius: 21,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }
+          ]}
+          onPress={handleBack}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Icon name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={26} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
 
       {/* Logo */}
       <View style={styles.logoContainer}>
@@ -111,21 +132,26 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
+  backButtonWrapper: {
+    width: '100%',
+    zIndex: 10,
+    position: 'relative',
+    alignItems: 'flex-start',
+  },
   backButton: {
-    marginTop: 20,
-    marginBottom: 10,
-    alignSelf: 'flex-start',
-    marginLeft: 20, // Added to move the back button a little to the right
+    backgroundColor: 'rgba(42,42,50,0.7)', // pill background for tap affordance, slightly dark transparent
+    marginLeft: 0, // Let SafeAreaView or wrapper handle horizontal spacing
+    // width/height/borderRadius set dynamically in component
   },
 
   logoContainer: {
     alignItems: 'center',
-    marginTop: -150, // Moved logo a bit to the top (was 40)
+    marginTop: -150,
   },
 
   logo: {
-    width: 280,
-    height: 280,
+    width: 180,
+    height: 180,
     tintColor: '#FFFFFF',
   },
 
@@ -149,9 +175,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Adjust this to move the button a tiny bit lower
   buttonRowWrapper: {
-    marginBottom: 55, // Was 70 before. Original paddingBottom in container is 40.
+    marginBottom: 55,
   },
 
   buttonRow: {

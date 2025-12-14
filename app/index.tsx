@@ -32,9 +32,52 @@ export default function Index() {
       }
 
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
+        
+        // Handle refresh token errors gracefully
+        if (error) {
+          if (
+            error.message?.includes('Refresh Token') || 
+            error.message?.includes('Invalid Refresh Token') ||
+            error.message?.includes('refresh_token_not_found')
+          ) {
+            console.warn('Refresh token invalid or expired. Clearing session.');
+            // Sign out to clear invalid tokens
+            try {
+              await supabase.auth.signOut();
+            } catch (signOutError) {
+              // Ignore sign out errors
+            }
+            if (isMounted) {
+              setIsSignedIn(false);
+            }
+          } else {
+            // For other errors, just treat as not signed in
+            if (isMounted) {
+              setIsSignedIn(false);
+            }
+          }
+        } else {
+          if (isMounted) {
+            setIsSignedIn(Boolean(data.session));
+          }
+        }
+      } catch (error: any) {
+        // Handle refresh token errors in catch block too
+        if (
+          error?.message?.includes('Refresh Token') || 
+          error?.message?.includes('Invalid Refresh Token') ||
+          error?.message?.includes('refresh_token_not_found')
+        ) {
+          console.warn('Refresh token invalid or expired. Clearing session.');
+          try {
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            // Ignore sign out errors
+          }
+        }
         if (isMounted) {
-          setIsSignedIn(Boolean(data.session));
+          setIsSignedIn(false);
         }
       } finally {
         if (isMounted) setIsLoading(false);

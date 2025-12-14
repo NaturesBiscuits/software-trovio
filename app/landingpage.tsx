@@ -94,7 +94,8 @@ export default function LandingPageScreen() {
       </View>
 
       {/* Settings Note */}
-      <View style={[styles.noteContainer, { marginTop: 250 }]}>
+      {/* Adjusted: reduced the marginTop from 250 to 80 to bring the note higher */}
+      <View style={[styles.noteContainer, { marginTop: 80 }]}>
         <Text style={styles.noteText}>
           {t('Your language preference can be changed at any time in Settings.')}
         </Text>

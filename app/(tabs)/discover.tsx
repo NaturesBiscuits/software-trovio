@@ -27,13 +27,13 @@ import { supabase } from '../../lib/supabase';
 import { STORE_TO_OPEN_KEY } from './notification';
 
 // --- YOUR COMPONENTS ---
-import BottomNav from '../../components/BottomNav';
 import DiscoverFlipCard, { StoreApplication } from '../../components/DiscoverFlipCard';
 import StoreProfileModal from '../../components/StoreProfileModal';
 import StoreRouteMap from '../../components/StoreRouteMap';
 import TopNav from '../../components/TopNav';
 import VerticalStoreCard from '../../components/VerticalStoreCard';
 import { useUserProfile } from '../../context/UserProfileContext';
+import { useNotifications } from '../../context/NotificationContext';
 
 const STORES_PER_PAGE = 5;
 
@@ -219,6 +219,7 @@ const ProfileSidePanel = ({
   hasProAccess?: boolean;
 }) => {
   const router = useRouter();
+  const { hasUnreadNotifications } = useNotifications();
   const panelWidth = Math.min(320, Dimensions.get('window').width * 0.86);
   const slideAnim = useRef(new Animated.Value(panelWidth)).current;
 
@@ -259,6 +260,7 @@ const ProfileSidePanel = ({
 
   const menuItems = [
     { label: 'Profile', icon: 'person-circle-outline', action: () => { onClose(); router.push('/(tabs)/topNavTabs/profile'); } },
+    { label: 'Notifications', icon: 'notifications-outline', action: () => { onClose(); router.push('/(tabs)/notification'); }, hasBadge: hasUnreadNotifications },
     ...(hasProAccess
       ? [
           { label: 'My Store', icon: 'storefront-outline', action: () => { onClose(); router.push('/(tabs)/mystore'); }},
@@ -280,7 +282,12 @@ const ProfileSidePanel = ({
         </View>
 
         <View style={styles.sidePanelInfoArea}>
-          <Image source={{ uri: user?.avatar_url || 'https://via.placeholder.com/120' }} style={styles.panelAvatar} />
+          <View style={{ position: 'relative' }}>
+            <Image source={{ uri: user?.avatar_url || 'https://via.placeholder.com/120' }} style={styles.panelAvatar} />
+            {hasUnreadNotifications && (
+              <View style={styles.notificationDot} />
+            )}
+          </View>
           <View>
             <Text style={styles.panelName}>{user?.full_name || 'User'}</Text>
             <Text style={styles.panelEmail} numberOfLines={1}>{user?.email}</Text>
@@ -290,7 +297,12 @@ const ProfileSidePanel = ({
         <View style={{ marginTop: 20 }}>
           {menuItems.map((item, index) => (
             <TouchableOpacity key={index} onPress={item.action} style={styles.panelButton}>
-              <Icon name={item.icon} size={28} color="#fff" style={styles.panelButtonIcon} />
+              <View style={{ position: 'relative' }}>
+                <Icon name={item.icon} size={28} color="#fff" style={styles.panelButtonIcon} />
+                {item.hasBadge && (
+                  <View style={styles.menuItemNotificationDot} />
+                )}
+              </View>
               <Text style={styles.panelButtonText}>{item.label}</Text>
             </TouchableOpacity>
           ))}
@@ -1040,10 +1052,6 @@ export default function HomeScreen() {
       <Animated.View style={[styles.topNavContainer, { opacity: topNavOpacity, transform: [{ translateY: topNavTranslateY }] }]}>
         <TopNav />
       </Animated.View>
-      
-      <Animated.View style={[styles.bottomNavContainer, { transform: [{ translateY: navTranslateY }] }]}>
-        <BottomNav visible />
-      </Animated.View>
     </View>
   );
 }
@@ -1136,6 +1144,30 @@ const styles = StyleSheet.create({
   panelButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 18, backgroundColor: 'transparent' },
   panelButtonIcon: { marginRight: 18 },
   panelButtonText: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  notificationDot: {
+    position: 'absolute',
+    top: -2,
+    right: 12,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#ff3b30',
+    borderWidth: 2,
+    borderColor: 'rgba(25,24,32,0.99)',
+    zIndex: 10,
+  },
+  menuItemNotificationDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#ff3b30',
+    borderWidth: 2,
+    borderColor: 'rgba(25,24,32,0.99)',
+    zIndex: 10,
+  },
 
   // Navs
   topNavContainer: { 

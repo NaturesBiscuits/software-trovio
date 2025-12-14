@@ -41,7 +41,26 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
       // Check for active session first
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       
-      if (sessionError || !sessionData.session) {
+      // Handle refresh token errors gracefully
+      if (sessionError) {
+        if (
+          sessionError.message?.includes('Refresh Token') || 
+          sessionError.message?.includes('Invalid Refresh Token') ||
+          sessionError.message?.includes('refresh_token_not_found')
+        ) {
+          console.warn('Refresh token invalid or expired. Clearing session.');
+          // Sign out to clear invalid tokens
+          try {
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            // Ignore sign out errors
+          }
+          setUserProfile(null);
+          return;
+        }
+      }
+      
+      if (!sessionData.session) {
         console.log('No active session found');
         setUserProfile(null);
         return;
@@ -50,6 +69,19 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
       // Get current user
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError) {
+        // Handle refresh token errors gracefully
+        if (
+          userError.message?.includes('Refresh Token') || 
+          userError.message?.includes('Invalid Refresh Token') ||
+          userError.message?.includes('refresh_token_not_found')
+        ) {
+          console.warn('Refresh token invalid or expired. Clearing session.');
+          try {
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            // Ignore sign out errors
+          }
+        }
         console.error('Error fetching user:', userError);
         setUserProfile(null);
         return;
@@ -89,7 +121,20 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
           type: profileData?.type || '',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Handle refresh token errors in catch block too
+      if (
+        error?.message?.includes('Refresh Token') || 
+        error?.message?.includes('Invalid Refresh Token') ||
+        error?.message?.includes('refresh_token_not_found')
+      ) {
+        console.warn('Refresh token invalid or expired. Clearing session.');
+        try {
+          await supabase.auth.signOut();
+        } catch (signOutError) {
+          // Ignore sign out errors
+        }
+      }
       console.error('Error in fetchUserProfile:', error);
       setUserProfile(null);
     } finally {

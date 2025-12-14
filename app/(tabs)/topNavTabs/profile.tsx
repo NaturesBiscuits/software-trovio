@@ -11,13 +11,81 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
+  Alert,
+  Platform,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
+import * as ImagePicker from "expo-image-picker";
 
 export default function ProfileScreen() {
   const { userProfile, isLoading, refreshProfile } = useUserProfile();
   const { t } = useTranslation();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [avatar, setAvatar] = useState<string | undefined>(undefined); // immediate UI update
+
+  // Helper: upload image and update avatar_url in supabase
+  const handleChangePhoto = async () => {
+    let permissionResult;
+    if (Platform.OS === "ios" || Platform.OS === "android") {
+      permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert(t("Permission denied"), t("Permission to access photos is required."));
+        return;
+      }
+    }
+    try {
+      setUploadingPhoto(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      let uri = asset.uri;
+      const ext = uri.split(".").pop() || "jpg";
+      const userId = userProfile?.id || "user";
+      const filename = `avatars/${userId}.${ext}`;
+
+      let file: any;
+      file = await fetch(uri).then(res => res.blob());
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filename, file, {
+          upsert: true,
+          contentType: `image/${ext.toLowerCase().replace("jpeg", "jpg")}`,
+        });
+      if (uploadError) {
+        Alert.alert(t("Upload failed"), uploadError.message);
+        return;
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("avatars").getPublicUrl(filename);
+
+      const { error: updateErr } = await supabase
+        .from("users")
+        .update({ avatar_url: publicUrl })
+        .eq("id", userProfile?.id);
+
+      if (updateErr) {
+        Alert.alert(t("Failed to update avatar"), updateErr.message);
+        return;
+      }
+
+      setAvatar(publicUrl);
+      refreshProfile && (await refreshProfile());
+    } catch (e: any) {
+      Alert.alert(t("Failed to change photo"), e?.message || String(e));
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#fff" }} contentContainerStyle={{ padding: 24 }}>
@@ -37,19 +105,39 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Profile Image */}
+      {/* Profile Image and Camera Icon in bottom right */}
       <View style={{ alignItems: "center", marginBottom: 15 }}>
         <View style={s.profileImageContainer}>
-          <Image
-            source={{ uri: userProfile?.avatar_url || "https://via.placeholder.com/100" }}
-            style={s.profileImage}
-          />
-          <View style={s.cameraIconContainer}>
-            <Icon name="camera" size={18} color="#fff" />
+          <View style={s.profileImageWrapper}>
+            {uploadingPhoto ? (
+              <View style={[s.profileImage, { justifyContent: "center", alignItems: "center", backgroundColor: "#eee" }]}>
+                <ActivityIndicator size={32} color="#007AFF" />
+              </View>
+            ) : (
+              <Image
+                source={{
+                  uri:
+                    avatar ||
+                    userProfile?.avatar_url ||
+                    "https://via.placeholder.com/100",
+                }}
+                style={s.profileImage}
+              />
+            )}
           </View>
+          <TouchableOpacity
+            style={s.cameraBottomRightOverlay}
+            onPress={handleChangePhoto}
+            disabled={uploadingPhoto}
+            activeOpacity={0.6}
+          >
+            <View style={s.cameraCircleLarger}>
+              <Icon name="camera" size={22} color="#fff" />
+            </View>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity>
-          <Text style={s.changePhotoText}>{t("Change photo")}</Text>
+        <TouchableOpacity onPress={handleChangePhoto} disabled={uploadingPhoto}>
+          <Text style={s.changePhotoText}>{uploadingPhoto ? t("Changing photo...") : t("Change photo")}</Text>
         </TouchableOpacity>
       </View>
 
@@ -148,18 +236,51 @@ const s = StyleSheet.create({
   profileImageContainer: {
     width: 100,
     height: 100,
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  profileImageWrapper: {
+    width: 100,
+    height: 100,
     borderRadius: 50,
     overflow: "hidden",
-    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+    // Subtle outline (barely visible)
+    borderWidth: 1.2,
+    borderColor: "rgba(60,60,60,0.07)",
+    backgroundColor: "#fff",
   },
-  profileImage: { width: "100%", height: "100%" },
-  cameraIconContainer: {
+  profileImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 50,
+  },
+  cameraBottomRightOverlay: {
     position: "absolute",
-    bottom: 0,
-    right: 0,
+    bottom: -10,
+    right: -10,
+    zIndex: 10,
+    width: 42,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cameraCircleLarger: {
     backgroundColor: "#007AFF",
-    borderRadius: 20,
-    padding: 6,
+    borderRadius: 21,
+    width: 42,
+    height: 42,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOpacity: 0.10,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   changePhotoText: {
     color: "#007AFF",

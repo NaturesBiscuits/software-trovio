@@ -20,15 +20,50 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-      
-      // Load user's language preference if logged in
-      if (session?.user) {
-        loadProfileLanguage();
-      }
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        // Handle refresh token errors gracefully
+        if (error) {
+          // Check if it's a refresh token error
+          if (
+            error.message?.includes('Refresh Token') || 
+            error.message?.includes('Invalid Refresh Token') ||
+            error.message?.includes('refresh_token_not_found')
+          ) {
+            console.warn('Refresh token invalid or expired. Clearing session.');
+            // Sign out to clear invalid tokens
+            supabase.auth.signOut().catch(() => {
+              // Ignore sign out errors
+            });
+            setUser(null);
+            setLoading(false);
+            return;
+          }
+        }
+        
+        setUser(session?.user ?? null);
+        setLoading(false);
+        
+        // Load user's language preference if logged in
+        if (session?.user) {
+          loadProfileLanguage();
+        }
+      })
+      .catch((error: any) => {
+        // Handle refresh token errors in catch block too
+        if (
+          error?.message?.includes('Refresh Token') || 
+          error?.message?.includes('Invalid Refresh Token') ||
+          error?.message?.includes('refresh_token_not_found')
+        ) {
+          console.warn('Refresh token invalid or expired. Clearing session.');
+          supabase.auth.signOut().catch(() => {
+            // Ignore sign out errors
+          });
+        }
+        setUser(null);
+        setLoading(false);
+      });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { Dimensions, Modal, SafeAreaView, StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 import MapView, { LatLng, Marker, Polyline, Region } from 'react-native-maps';
 import Icon from 'react-native-vector-icons/Ionicons';
 
@@ -11,6 +11,14 @@ interface StoreRouteMapProps {
   navigateLabel?: string;
 }
 
+// Consistent map size across all devices
+// Using percentage-based width with a max constraint for consistency
+const { width: deviceWidth, height: deviceHeight } = Dimensions.get('window');
+// Use 90% of screen width with max 350px and min padding of 20px on each side
+const MAP_WIDTH = Math.min(350, deviceWidth - 40);
+// Consistent aspect ratio (approximately 16:9)
+const MAP_HEIGHT = Math.round(MAP_WIDTH * 0.55);
+
 export default function StoreRouteMap({
   origin,
   destination,
@@ -19,8 +27,10 @@ export default function StoreRouteMap({
   navigateLabel = 'Center on Route',
 }: StoreRouteMapProps) {
   const mapRef = useRef<MapView | null>(null);
+  const expandedMapRef = useRef<MapView | null>(null);
   const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const region = useMemo<Region | undefined>(() => {
     if (destination) {
@@ -46,7 +56,7 @@ export default function StoreRouteMap({
       if (coordsToFit.length > 1) {
         mapRef.current.fitToCoordinates(coordsToFit, {
           animated,
-          edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+          edgePadding: { top: 40, right: 40, bottom: 40, left: 40 }, // also slight adjustment since container is smaller
         });
       } else {
         mapRef.current.animateToRegion(
@@ -72,17 +82,37 @@ export default function StoreRouteMap({
     const fetchRoute = async () => {
       setRouteLoading(true);
       try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`;
+        // Request route with alternatives to find the shortest path by road
+        // OSRM returns routes sorted by duration, but we can compare distances
+        const url = `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&alternatives=true`;
         const res = await fetch(url);
         const json = await res.json();
-        const coords = json?.routes?.[0]?.geometry?.coordinates;
-        if (!isCancelled && Array.isArray(coords)) {
-          setRouteCoords(
-            coords.map(([lon, lat]: [number, number]) => ({
-              latitude: lat,
-              longitude: lon,
-            }))
-          );
+        
+        if (!isCancelled && json?.routes && Array.isArray(json.routes) && json.routes.length > 0) {
+          // Find the shortest route by distance
+          let shortestRoute = json.routes[0];
+          let shortestDistance = json.routes[0]?.distance || Infinity;
+          
+          for (const route of json.routes) {
+            if (route.distance && route.distance < shortestDistance) {
+              shortestDistance = route.distance;
+              shortestRoute = route;
+            }
+          }
+          
+          const coords = shortestRoute?.geometry?.coordinates;
+          if (Array.isArray(coords) && coords.length > 0) {
+            setRouteCoords(
+              coords.map(([lon, lat]: [number, number]) => ({
+                latitude: lat,
+                longitude: lon,
+              }))
+            );
+          } else {
+            setRouteCoords([]);
+          }
+        } else {
+          setRouteCoords([]);
         }
       } catch (error) {
         if (!isCancelled) {
@@ -111,57 +141,174 @@ export default function StoreRouteMap({
     focusOnRoute();
   };
 
+  const handleMapPress = () => {
+    setIsExpanded(true);
+  };
+
+  const handleCloseExpanded = () => {
+    setIsExpanded(false);
+  };
+
+  const focusOnExpandedRoute = useCallback(
+    (animated = true) => {
+      if (!expandedMapRef.current || !destination) return;
+      const coordsToFit =
+        routeCoords.length > 0
+          ? routeCoords
+          : origin
+          ? [origin, destination]
+          : [destination];
+      if (coordsToFit.length > 1) {
+        expandedMapRef.current.fitToCoordinates(coordsToFit, {
+          animated,
+          edgePadding: { top: 100, right: 60, bottom: 100, left: 60 },
+        });
+      } else {
+        expandedMapRef.current.animateToRegion(
+          {
+            latitude: coordsToFit[0].latitude,
+            longitude: coordsToFit[0].longitude,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          },
+          animated ? 500 : 0
+        );
+      }
+    },
+    [origin, destination, routeCoords]
+  );
+
+  useEffect(() => {
+    if (isExpanded) {
+      // Focus on route when expanded modal opens
+      setTimeout(() => focusOnExpandedRoute(false), 100);
+    }
+  }, [isExpanded, focusOnExpandedRoute]);
+
   if (!destination) {
     return <Text style={styles.infoText}>Location unavailable.</Text>;
   }
 
   return (
-    <View style={[styles.container, containerStyle]}>
-      {region ? (
-        <MapView ref={mapRef} style={styles.map} initialRegion={region}>
-          {origin && (
-            <Marker coordinate={origin}>
-              <View style={styles.userMarkerOuter}>
-                <View style={styles.userMarkerInner} />
-              </View>
-            </Marker>
-          )}
-          <Marker coordinate={destination} title="Store" pinColor="#be3e3e" />
-          {origin && destination && (
-            <Polyline
-              coordinates={
-                routeCoords.length > 1 ? routeCoords : [origin, destination]
-              }
-              strokeColor="#d93a3a"
-              strokeWidth={4}
-            />
-          )}
-        </MapView>
-      ) : (
-        <View style={[styles.map, styles.center]}>
-          <Text style={styles.infoText}>Map unavailable.</Text>
-        </View>
-      )}
-
+    <>
       <TouchableOpacity
-        style={[
-          styles.navigateButton,
-          !destination ? styles.buttonDisabled : undefined,
-        ]}
-        onPress={handleNavigatePress}
+        style={[styles.container, containerStyle]}
+        activeOpacity={0.9}
+        onPress={handleMapPress}
         disabled={!destination}
       >
-        <Icon name="navigate-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
-        <Text style={styles.navigateText}>{navigateLabel}</Text>
+        {region ? (
+          <MapView ref={mapRef} style={styles.map} initialRegion={region} scrollEnabled={false} zoomEnabled={false} pitchEnabled={false} rotateEnabled={false}>
+            {origin && (
+              <Marker coordinate={origin}>
+                <View style={styles.userMarkerOuter}>
+                  <View style={styles.userMarkerInner} />
+                </View>
+              </Marker>
+            )}
+            <Marker coordinate={destination} title="Store" pinColor="#be3e3e" />
+            {origin && destination && (
+              <Polyline
+                coordinates={
+                  routeCoords.length > 1 ? routeCoords : [origin, destination]
+                }
+                strokeColor="#d93a3a"
+                strokeWidth={5}
+                lineCap="round"
+                lineJoin="round"
+              />
+            )}
+          </MapView>
+        ) : (
+          <View style={[styles.map, styles.center]}>
+            <Text style={styles.infoText}>Map unavailable.</Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[
+            styles.navigateButton,
+            !destination ? styles.buttonDisabled : undefined,
+          ]}
+          onPress={handleNavigatePress}
+          disabled={!destination}
+        >
+          <Icon name="navigate-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
+          <Text style={styles.navigateText}>{navigateLabel}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.expandHint}>
+          <Icon name="expand-outline" size={16} color="#fff" />
+          <Text style={styles.expandHintText}>Tap to expand</Text>
+        </View>
       </TouchableOpacity>
-    </View>
+
+      {/* Expanded Map Modal */}
+      <Modal
+        visible={isExpanded}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={handleCloseExpanded}
+      >
+        <SafeAreaView style={styles.expandedContainer}>
+          <View style={styles.expandedHeader}>
+            <TouchableOpacity style={styles.expandedBackButton} onPress={handleCloseExpanded}>
+              <Icon name="chevron-back" size={24} color="#111" />
+            </TouchableOpacity>
+            <Text style={styles.expandedTitle}>Route Map</Text>
+            <View style={styles.expandedSpacer} />
+          </View>
+
+          {region ? (
+            <MapView
+              ref={expandedMapRef}
+              style={styles.expandedMap}
+              initialRegion={region}
+            >
+              {origin && (
+                <Marker coordinate={origin}>
+                  <View style={styles.userMarkerOuter}>
+                    <View style={styles.userMarkerInner} />
+                  </View>
+                </Marker>
+              )}
+              <Marker coordinate={destination} title="Store" pinColor="#be3e3e" />
+              {origin && destination && (
+                <Polyline
+                  coordinates={
+                    routeCoords.length > 1 ? routeCoords : [origin, destination]
+                  }
+                  strokeColor="#d93a3a"
+                  strokeWidth={5}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+              )}
+            </MapView>
+          ) : (
+            <View style={[styles.expandedMap, styles.center]}>
+              <Text style={styles.infoText}>Map unavailable.</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.expandedNavigateButton}
+            onPress={() => focusOnExpandedRoute(true)}
+            disabled={!destination}
+          >
+            <Icon name="navigate-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.expandedNavigateText}>Center on Route</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: 360,
-    height: 220,
+    width: MAP_WIDTH,
+    height: MAP_HEIGHT,
     alignSelf: 'center',
     borderRadius: 12,
     overflow: 'hidden',
@@ -216,5 +363,72 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.5,
   },
+  expandHint: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  expandHintText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  expandedContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  expandedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  expandedBackButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+  expandedTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111',
+    textAlign: 'center',
+    marginRight: 40, // Balance the back button
+  },
+  expandedSpacer: {
+    width: 40,
+  },
+  expandedMap: {
+    flex: 1,
+    width: '100%',
+  },
+  expandedNavigateButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: '#1f78ff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  expandedNavigateText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
 });
-

@@ -6,13 +6,16 @@ import {
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  TouchableOpacity,
+  Platform,
+  Dimensions,
 } from "react-native";
-import BottomNav from "../../components/BottomNav";
 import NotificationCard, { PromotionNotification } from "../../components/notifications-card";
 import { supabase } from "../../lib/supabase";
 import { useNotifications } from "../../context/NotificationContext";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Icon from "react-native-vector-icons/Ionicons";
 
 export const STORE_TO_OPEN_KEY = '@trovio_store_to_open';
 
@@ -171,12 +174,53 @@ export default function NotificationScreen() {
     );
   }, [handleNotificationPress]);
 
+  // Consistent sizing for back button
+  const { width: deviceWidth } = Dimensions.get("window");
+  const BACK_BUTTON_SIZE = deviceWidth < 350 ? 36 : 42;
+
+  const handleBack = () => {
+    if (router.canGoBack?.()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)/discover");
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
       {/* ===== HEADER ===== */}
       <View style={styles.topHeader}>
-        <View>
-          <View></View>
+        {/* Back button - always in absolute corner (no circular placeholder) */}
+        <TouchableOpacity
+          onPress={handleBack}
+          style={[
+            styles.backButtonWrapper,
+            {
+              top: Platform.OS === "ios" ? 45 : 48,
+              left: 16,
+              width: BACK_BUTTON_SIZE,
+              height: BACK_BUTTON_SIZE,
+              borderRadius: 0,
+              justifyContent: "center",
+              alignItems: "center",
+              backgroundColor: "transparent",
+              // no background, no circle
+              shadowOpacity: 0,
+              elevation: 0,
+            },
+          ]}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Icon
+            name={Platform.OS === "ios" ? "chevron-back" : "arrow-back"}
+            size={26}
+            color="#FFF"
+          />
+        </TouchableOpacity>
+        {/* Adjusted header and subheader position */}
+        <View style={styles.headerContainer}>
           <Text style={styles.headerText}>Notifications</Text>
           <Text style={styles.subHeaderText}>Stay updated with new alerts</Text>
         </View>
@@ -206,12 +250,9 @@ export default function NotificationScreen() {
           />
         )}
       </View>
-
-      <BottomNav visible />
     </View>
   );
 }
-
 
 const styles = StyleSheet.create({
   /* ---------------- HEADER ---------------- */
@@ -223,17 +264,33 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 45,
     justifyContent: "flex-end",
     marginBottom: 15,
+    position: "relative",
+  },
+  backButtonWrapper: {
+    position: "absolute",
+    zIndex: 99,
+    // styles for no circle/backplate
+    backgroundColor: "transparent",
+    shadowOpacity: 0,
+    elevation: 0,
+    borderRadius: 0,
+  },
+  headerContainer: {
+    marginTop: 32, // Move header lower within the topHeader
+    paddingBottom: 10,
   },
   headerText: {
     color: "#fff",
     fontSize: 30,
     fontWeight: "700",
     marginBottom: 15,
+    textAlign: "left",
   },
   subHeaderText: {
     color: "#fff",
     fontSize: 14,
     marginTop: 10,
+    textAlign: "left",
   },
   loaderContainer: {
     flex: 1,

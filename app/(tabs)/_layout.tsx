@@ -1,11 +1,8 @@
-import { Stack, usePathname } from "expo-router";
+import { Stack } from "expo-router";
 import React from "react";
 import { StatusBar } from "expo-status-bar";
-import BottomNav from "../../components/BottomNav";
 
 export default function TabsLayout() {
-    const pathname = usePathname();
-    const hideBottomNav = pathname?.includes("/topNavTabs/Upload");
     return ( 
         <React.Fragment>
             <StatusBar style="auto" />
@@ -15,7 +12,6 @@ export default function TabsLayout() {
                 <Stack.Screen name="home" />
                 <Stack.Screen name="settings" />
             </Stack>
-            {!hideBottomNav && <BottomNav />}
         </React.Fragment>
     );
 }

@@ -243,13 +243,22 @@ export default function ActivePromotionsScreen() {
                         {promo.description}
                       </Text>
 
-                      <View style={styles.promotionFooter}>
+                      <View style={[styles.promotionFooter, { justifyContent: "space-between" }]}>
                         <View style={styles.dateInfo}>
                           <Icon name="calendar-outline" size={14} color="#8f92a1" />
                           <Text style={styles.dateText}>
                             Expires {formatDate(promo.expires_at)}
                           </Text>
                         </View>
+                        {/* Boost Promotions Button */}
+                        <TouchableOpacity
+                          style={styles.boostButton}
+                          onPress={() => router.push("/(tabs)/boostpromotions")}
+                          activeOpacity={0.8}
+                        >
+                          <Icon name="rocket-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                          <Text style={styles.boostButtonText}>Boost</Text>
+                        </TouchableOpacity>
                       </View>
                     </View>
                   </View>
@@ -399,6 +408,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: "#f4f4f6",
+    // justifyContent: "space-between" is now set inline where needed
   },
   dateInfo: {
     flexDirection: "row",
@@ -409,5 +419,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#8f92a1",
   },
+  boostButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#191820",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    elevation: 1,
+    marginLeft: 8,
+  },
+  boostButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
 });
-

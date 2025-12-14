@@ -1,27 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Image as ExpoImage } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  Modal,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  Platform,
-  ScrollView,
-  KeyboardAvoidingView,
-  Image,
-  FlatList,
+  View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import * as ImagePicker from 'expo-image-picker';
-import { Image as ExpoImage } from 'expo-image';
-import { supabase } from '../lib/supabase';
-import { uploadCompressedImage } from '../lib/imageUtils';
 import { getCachedImageUrls } from '../lib/imageCache';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { uploadCompressedImage } from '../lib/imageUtils';
+import { supabase } from '../lib/supabase';
 import type { StoreApplication } from './DiscoverFlipCard';
+import { type TagItem } from './TagSelector';
 
 interface Promotion {
   id: string;
@@ -51,8 +51,10 @@ export default function EditStoreModal({
   const [storeName, setStoreName] = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
+  const [tags, setTags] = useState<TagItem[]>([]);
+  const [tagSearch, setTagSearch] = useState('');
+  const [allAvailableTags, setAllAvailableTags] = useState<TagItem[]>([]);
+  const [loadingTags, setLoadingTags] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]); // Array of photo URLs for display
   const [photoPaths, setPhotoPaths] = useState<string[]>([]); // Array of photo paths from database
   const [photoUris, setPhotoUris] = useState<string[]>([]); // Array of local URIs for new photos
@@ -71,14 +73,75 @@ export default function EditStoreModal({
       setStoreName(store.store_name || '');
       setDescription(store.description || '');
       setAddress(store.address || '');
-      setTags(store.tags || []);
-      setTagInput('');
       setPhotoPaths(store.photos_url || []);
       setPhotoUris([]);
+      setTagSearch('');
       fetchPromotions();
       loadPhotoUrls();
+      loadTags();
+      loadAllAvailableTags();
     }
   }, [store, visible]);
+
+  // Load all available tags from database
+  const loadAllAvailableTags = async () => {
+    setLoadingTags(true);
+    try {
+      const { data, error } = await supabase
+        .from('tags')
+        .select('id, name')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error loading all tags:', error);
+        setAllAvailableTags([]);
+      } else {
+        setAllAvailableTags((data as TagItem[]) || []);
+      }
+    } catch (error) {
+      console.error('Error loading all tags:', error);
+      setAllAvailableTags([]);
+    } finally {
+      setLoadingTags(false);
+    }
+  };
+
+  // Load tags from database and convert store.tags (string[]) to TagItem[]
+  const loadTags = async () => {
+    if (!store?.tags || store.tags.length === 0) {
+      setTags([]);
+      return;
+    }
+
+    try {
+      // Fetch all tags from database
+      const { data: allTagsData, error } = await supabase
+        .from('tags')
+        .select('id, name')
+        .in('name', store.tags);
+
+      if (error) {
+        console.error('Error loading tags:', error);
+        // Fallback: create TagItem from names without IDs
+        setTags(store.tags.map((name, index) => ({ id: index, name })));
+        return;
+      }
+
+      // Map store tag names to TagItem objects
+      const tagItems: TagItem[] = store.tags
+        .map((tagName) => {
+          const found = allTagsData?.find((t) => t.name === tagName);
+          return found ? { id: found.id, name: found.name } : null;
+        })
+        .filter((tag): tag is TagItem => tag !== null);
+
+      setTags(tagItems);
+    } catch (error) {
+      console.error('Error loading tags:', error);
+      // Fallback: create TagItem from names without IDs
+      setTags(store.tags.map((name, index) => ({ id: index, name })));
+    }
+  };
 
   const loadPhotoUrls = async () => {
     if (!store || !store.photos_url || !store.user_id) {
@@ -154,18 +217,12 @@ export default function EditStoreModal({
     }
   };
 
-  const addTag = () => {
-    const trimmed = tagInput.trim();
-    if (trimmed && !tags.includes(trimmed)) {
-      setTags([...tags, trimmed]);
-      setTagInput('');
-    }
+  const handleTagSelect = (tag: TagItem) => {
+    setTags([...tags, tag]);
   };
 
-  const removeTag = (index: number) => {
-    const newTags = [...tags];
-    newTags.splice(index, 1);
-    setTags(newTags);
+  const handleTagDeselect = (tag: TagItem) => {
+    setTags(tags.filter((t) => t.id !== tag.id));
   };
 
   const deletePromotion = async (promoId: string) => {
@@ -304,6 +361,9 @@ export default function EditStoreModal({
       // photoPaths contains the original paths from the database
       const allPhotoPaths = [...photoPaths, ...newPhotoPaths];
 
+      // Convert TagItem[] to string[] (just the names) for database
+      const tagNames = tags.map((tag) => tag.name);
+
       // Update store in database
       const { error } = await supabase
         .from('store_applications')
@@ -311,7 +371,7 @@ export default function EditStoreModal({
           store_name: storeName.trim(),
           description: description.trim() || null,
           address: address.trim() || null,
-          tags: tags.length > 0 ? tags : null,
+          tags: tagNames.length > 0 ? tagNames : null,
           photos_url: allPhotoPaths.length > 0 ? allPhotoPaths : null,
         })
         .eq('id', store.id);
@@ -402,32 +462,79 @@ export default function EditStoreModal({
           {/* Tags */}
           <View style={styles.section}>
             <Text style={styles.label}>Tags</Text>
-            <View style={styles.tagInputContainer}>
-              <TextInput
-                style={[styles.input, styles.tagInput]}
-                value={tagInput}
-                onChangeText={setTagInput}
-                placeholder="Add a tag"
-                placeholderTextColor="#999"
-                onSubmitEditing={addTag}
-              />
-              <TouchableOpacity onPress={addTag} style={styles.addTagButton}>
-                <Icon name="add" size={20} color="#1f78ff" />
-              </TouchableOpacity>
-            </View>
+            
+            {/* Selected Tags Display */}
             {tags.length > 0 && (
-              <View style={styles.tagsContainer}>
-                {tags.map((tag, index) => (
-                  <View key={index} style={styles.tag}>
-                    <Text style={styles.tagText}>{tag}</Text>
-                    <TouchableOpacity
-                      onPress={() => removeTag(index)}
-                      style={styles.removeTagButton}
-                    >
-                      <Icon name="close-circle" size={18} color="#999" />
-                    </TouchableOpacity>
-                  </View>
+              <View style={styles.selectedTagsContainer}>
+                {tags.map((tag) => (
+                  <TouchableOpacity
+                    key={tag.id}
+                    style={styles.selectedTag}
+                    onLongPress={() => handleTagDeselect(tag)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.selectedTagText}>{tag.name}</Text>
+                  </TouchableOpacity>
                 ))}
+              </View>
+            )}
+
+            {/* Search Input */}
+            <View style={styles.tagSearchContainer}>
+              <View style={styles.tagSearchInputContainer}>
+                <Icon name="search-outline" size={20} color="#999" style={styles.tagSearchIcon} />
+                <TextInput
+                  placeholder="Search tags to add..."
+                  value={tagSearch}
+                  onChangeText={setTagSearch}
+                  style={styles.tagSearchInput}
+                  placeholderTextColor="#999"
+                />
+                {tagSearch.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setTagSearch('')}
+                    style={styles.clearSearchButton}
+                  >
+                    <Icon name="close-circle" size={20} color="#999" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* Tag Results - Only show when searching */}
+            {tagSearch.length > 0 && (
+              <View style={styles.tagResultsContainer}>
+                {loadingTags ? (
+                  <ActivityIndicator size="small" color="#1f78ff" style={{ marginVertical: 20 }} />
+                ) : (
+                  <View style={styles.tagsGrid}>
+                    {allAvailableTags
+                      .filter((tag) =>
+                        tag.name.toLowerCase().includes(tagSearch.toLowerCase()) &&
+                        !tags.some((selectedTag) => selectedTag.id === tag.id)
+                      )
+                      .map((tag) => (
+                        <TouchableOpacity
+                          key={String(tag.id)}
+                          onPress={() => {
+                            handleTagSelect(tag);
+                            setTagSearch('');
+                          }}
+                          style={styles.tagChip}
+                        >
+                          <Text style={styles.tagChipText}>{tag.name}</Text>
+                          <Icon name="add" size={16} color="#9333ea" style={styles.tagIcon} />
+                        </TouchableOpacity>
+                      ))}
+                    {allAvailableTags.filter(
+                      (tag) =>
+                        tag.name.toLowerCase().includes(tagSearch.toLowerCase()) &&
+                        !tags.some((selectedTag) => selectedTag.id === tag.id)
+                    ).length === 0 && (
+                      <Text style={styles.noResultsText}>No tags found matching "{tagSearch}"</Text>
+                    )}
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -735,39 +842,81 @@ const styles = StyleSheet.create({
     minHeight: 100,
     textAlignVertical: 'top',
   },
-  tagInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  tagInput: {
-    flex: 1,
-    marginRight: 8,
-  },
-  addTagButton: {
-    padding: 8,
-  },
-  tagsContainer: {
+  selectedTagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 8,
+    marginBottom: 12,
   },
-  tag: {
+  selectedTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#eef1ff',
+    backgroundColor: '#9333ea',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
     marginRight: 8,
     marginBottom: 8,
   },
-  tagText: {
-    color: '#4f63d2',
+  selectedTagText: {
+    color: '#fff',
     fontWeight: '600',
-    marginRight: 6,
+    fontSize: 14,
   },
-  removeTagButton: {
-    padding: 2,
+  tagSearchContainer: {
+    marginBottom: 12,
+  },
+  tagSearchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff',
+  },
+  tagSearchIcon: {
+    marginRight: 8,
+  },
+  tagSearchInput: {
+    flex: 1,
+    paddingVertical: 10,
+    color: '#000',
+    fontSize: 16,
+  },
+  clearSearchButton: {
+    padding: 4,
+  },
+  tagResultsContainer: {
+    marginTop: 8,
+  },
+  tagsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  tagChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  tagIcon: {
+    marginLeft: 2,
+  },
+  noResultsText: {
+    color: '#999',
+    textAlign: 'center',
+    padding: 20,
+    fontStyle: 'italic',
+    fontSize: 14,
   },
   addPhotoButton: {
     flexDirection: 'row',

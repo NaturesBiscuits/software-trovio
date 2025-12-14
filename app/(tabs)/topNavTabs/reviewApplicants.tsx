@@ -1,11 +1,14 @@
+import { getCachedImageUrls } from "@/lib/imageCache";
 import { supabase } from "@/lib/supabase";
+import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 
 type StoreApplication = {
   id: string;
+  user_id: string | null;
   store_name: string | null;
   description: string | null;
   tags: string[] | null;
@@ -17,21 +20,110 @@ type StoreApplication = {
 export default function AdminReviewList() {
   const [applications, setApplications] = useState<StoreApplication[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [imageUrls, setImageUrls] = useState<Map<string, string[]>>(new Map());
+  const [imageLoading, setImageLoading] = useState<Map<string, boolean>>(new Map());
+
+  const fetchApplications = async () => {
+    const { data, error } = await supabase
+      .from("store_applications")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching applications:", error);
+      return [];
+    }
+
+    // Sort: pending/accepted first (by created_at DESC), then declined (by created_at DESC)
+    const sorted = (data || []).sort((a, b) => {
+      const aStatus = a.status || "pending";
+      const bStatus = b.status || "pending";
+      
+      // If both are declined, sort by created_at DESC
+      if (aStatus === "declined" && bStatus === "declined") {
+        const aDate = new Date(a.created_at || 0).getTime();
+        const bDate = new Date(b.created_at || 0).getTime();
+        return bDate - aDate;
+      }
+      
+      // If only one is declined, put it at the bottom
+      if (aStatus === "declined") return 1;
+      if (bStatus === "declined") return -1;
+      
+      // Both are pending/accepted, sort by created_at DESC
+      const aDate = new Date(a.created_at || 0).getTime();
+      const bDate = new Date(b.created_at || 0).getTime();
+      return bDate - aDate;
+    });
+
+    return sorted;
+  };
+
+  const loadData = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    const sorted = await fetchApplications();
+    setApplications(sorted);
+
+    if (isRefresh) {
+      setRefreshing(false);
+    } else {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchApplications = async () => {
-      const { data, error } = await supabase
-        .from("store_applications")
-        .select("*")
-        .order("created_at", { ascending: false });
+    loadData();
+  }, []);
 
-      if (error) console.error("Error fetching applications:", error);
-      else setApplications(data || []);
-      setLoading(false);
+  // Load images for all applications
+  useEffect(() => {
+    const loadAllImages = async () => {
+      const loadingMap = new Map<string, boolean>();
+      const urlMap = new Map<string, string[]>();
+
+      // Initialize loading state for all applications with photos
+      applications.forEach((app) => {
+        if (app.photos_url?.length && app.user_id) {
+          loadingMap.set(app.id, true);
+        }
+      });
+      setImageLoading(new Map(loadingMap));
+
+      // Load images for each application
+      const imagePromises = applications.map(async (app) => {
+        if (!app.photos_url?.length || !app.user_id) {
+          urlMap.set(app.id, []);
+          loadingMap.set(app.id, false);
+          return;
+        }
+
+        try {
+          const urls = await getCachedImageUrls(app.photos_url, app.user_id);
+          const filtered = urls.filter((url): url is string => Boolean(url));
+          urlMap.set(app.id, filtered);
+        } catch (error) {
+          console.error(`Error loading images for application ${app.id}:`, error);
+          urlMap.set(app.id, []);
+        } finally {
+          loadingMap.set(app.id, false);
+        }
+      });
+
+      await Promise.all(imagePromises);
+      setImageUrls(new Map(urlMap));
+      setImageLoading(new Map(loadingMap));
     };
 
-    fetchApplications();
-  }, []);
+    if (applications.length > 0) {
+      loadAllImages();
+    }
+  }, [applications]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -41,6 +133,17 @@ export default function AdminReviewList() {
           <Icon name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Applications</Text>
+        <TouchableOpacity 
+          onPress={() => loadData(true)} 
+          style={styles.refreshButton}
+          disabled={refreshing}
+        >
+          <Icon 
+            name="refresh" 
+            size={24} 
+            color={refreshing ? "#ccc" : "#000"} 
+          />
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -53,9 +156,9 @@ export default function AdminReviewList() {
             <Text style={styles.noApplications}>No applications found.</Text>
           ) : (
             applications.map((app) => {
-              const photoUrl = app.photos_url?.[0]
-                ? supabase.storage.from("tus").getPublicUrl(app.photos_url[0]).data.publicUrl
-                : null;
+              const urls = imageUrls.get(app.id) || [];
+              const isLoading = imageLoading.get(app.id) ?? false;
+              const photoUrl = urls[0] || null;
 
               return (
                 <TouchableOpacity
@@ -63,8 +166,18 @@ export default function AdminReviewList() {
                   style={styles.card}
                   onPress={() => router.push(`/admin/review/${app.id}`)}
                 >
-                  {photoUrl ? (
-                    <Image source={{ uri: photoUrl }} style={styles.thumbnail} />
+                  {isLoading ? (
+                    <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
+                      <ActivityIndicator size="small" color="#468dff" />
+                    </View>
+                  ) : photoUrl ? (
+                    <Image
+                      source={{ uri: photoUrl }}
+                      style={styles.thumbnail}
+                      contentFit="cover"
+                      transition={200}
+                      cachePolicy="memory-disk"
+                    />
                   ) : (
                     <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
                       <Text style={{ color: "#999" }}>No Photo</Text>
@@ -110,6 +223,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: "#fff",
@@ -117,7 +231,16 @@ const styles = StyleSheet.create({
     borderColor: "#eee",
   },
   backButton: { marginRight: 9 },
-  headerTitle: { fontSize: 20, fontWeight: "bold" },
+  headerTitle: { 
+    fontSize: 20, 
+    fontWeight: "bold",
+    flex: 1,
+    textAlign: "center",
+    marginRight: 33, // Balance the back button width
+  },
+  refreshButton: {
+    padding: 4,
+  },
   scrollContent: { padding: 16 },
   card: {
     flexDirection: "row",

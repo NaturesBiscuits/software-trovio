@@ -5,8 +5,8 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { LanguageProvider } from '../context/LanguageContext';
-import { UserProfileProvider } from '../context/UserProfileContext';
 import { NotificationProvider } from '../context/NotificationContext';
+import { UserProfileProvider } from '../context/UserProfileContext';
 // Ensure i18next is initialized early
 import '../services/i18next';
 
@@ -27,6 +27,7 @@ export default function RootLayout() {
               <Stack.Screen name="onboarding" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              <Stack.Screen name="admin" options={{ headerShown: false }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} /> 
             </Stack>
             <StatusBar style="auto" />

@@ -1,22 +1,22 @@
 import UserTagPreferences from "@/components/UserTagPreferences";
 import { useUserProfile } from "@/context/UserProfileContext";
 import { supabase } from "@/lib/supabase";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  ActivityIndicator,
+  Alert,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  ActivityIndicator,
-  Alert,
-  Platform,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
-import * as ImagePicker from "expo-image-picker";
 
 export default function ProfileScreen() {
   const { userProfile, isLoading, refreshProfile } = useUserProfile();
@@ -202,7 +202,7 @@ export default function ProfileScreen() {
         >
           <View style={s.adminButtonContent}>
             <Icon name="people" size={20} color="#007AFF" />
-            <Text style={s.adminButtonText}>{t("Applicants  (admin)")}</Text>
+            <Text style={s.adminButtonText}>{t("Review Applicants")}</Text>
             <Icon name="chevron-forward" size={18} color="#007AFF" />
           </View>
         </TouchableOpacity>

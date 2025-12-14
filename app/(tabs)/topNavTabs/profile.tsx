@@ -48,29 +48,26 @@ export default function ProfileScreen() {
       let uri = asset.uri;
       const ext = uri.split(".").pop() || "jpg";
       const userId = userProfile?.id || "user";
-      const filename = `avatars/${userId}.${ext}`;
+      const filePath = `profiles/${userId}/avatar.${ext}`;
 
       let file: any;
       file = await fetch(uri).then(res => res.blob());
 
       const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(filename, file, {
+        .from("tus")
+        .upload(filePath, file, {
           upsert: true,
-          contentType: `image/${ext.toLowerCase().replace("jpeg", "jpg")}`,
+          contentType: `image/${ext === "jpg" ? "jpeg" : ext}`,
         });
       if (uploadError) {
         Alert.alert(t("Upload failed"), uploadError.message);
         return;
       }
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("avatars").getPublicUrl(filename);
-
+      // Update DB with the storage path (not a public URL)
       const { error: updateErr } = await supabase
-        .from("users")
-        .update({ avatar_url: publicUrl })
+        .from("profiles")
+        .update({ avatar_url: filePath })
         .eq("id", userProfile?.id);
 
       if (updateErr) {
@@ -78,6 +75,9 @@ export default function ProfileScreen() {
         return;
       }
 
+      // Show image immediately by generating a public URL for rendering
+      const { data: publicData } = supabase.storage.from("tus").getPublicUrl(filePath);
+      const publicUrl = publicData?.publicUrl;
       setAvatar(publicUrl);
       refreshProfile && (await refreshProfile());
     } catch (e: any) {
@@ -86,6 +86,12 @@ export default function ProfileScreen() {
       setUploadingPhoto(false);
     }
   };
+  // Compute public URL only for rendering; DB stores the path
+  const avatarUri =
+    avatar ??
+    (userProfile?.avatar_url
+      ? supabase.storage.from("tus").getPublicUrl(userProfile.avatar_url).data.publicUrl
+      : undefined);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#fff" }} contentContainerStyle={{ padding: 24 }}>
@@ -113,16 +119,12 @@ export default function ProfileScreen() {
               <View style={[s.profileImage, { justifyContent: "center", alignItems: "center", backgroundColor: "#eee" }]}>
                 <ActivityIndicator size={32} color="#007AFF" />
               </View>
+            ) : avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={s.profileImage} />
             ) : (
-              <Image
-                source={{
-                  uri:
-                    avatar ||
-                    userProfile?.avatar_url ||
-                    "https://via.placeholder.com/100",
-                }}
-                style={s.profileImage}
-              />
+              <View style={[s.profileImage, s.defaultProfileContainer]}>
+                <Icon name="person" size={50} color="#999" />
+              </View>
             )}
           </View>
           <TouchableOpacity
@@ -256,6 +258,11 @@ const s = StyleSheet.create({
     width: "100%",
     height: "100%",
     borderRadius: 50,
+  },
+  defaultProfileContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f0f0f0",
   },
   cameraBottomRightOverlay: {
     position: "absolute",

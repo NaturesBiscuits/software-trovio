@@ -21,6 +21,7 @@ import { supabase } from "../../../lib/supabase";
 import { useNavigation } from "@react-navigation/native";
 import StoreProfileModal from "../../../components/StoreProfileModal";
 import { getCachedImageUrls, getCachedImageUrl } from "../../../lib/imageCache";
+import TagSelector, { TagItem } from "../../../components/TagSelector";
 
 // --- Type Definitions ---
 interface StoreApplication {
@@ -42,8 +43,6 @@ interface StoreApplication {
   longitude: number | null;
 }
 
-type TagItem = { id: string; name: string };
-
 // --- Constants ---
 const RECENTS_STORAGE_KEY = "recent-searches-topnavtabs";
 const MAX_RECENT_SEARCHES = 6;
@@ -64,11 +63,9 @@ export default function SearchScreen() {
   const scrollViewRef = useRef<any>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [allTags, setAllTags] = useState<TagItem[]>([]);
   const [selectedTags, setSelectedTags] = useState<TagItem[]>([]);
   const [stores, setStores] = useState<StoreApplication[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tagsLoading, setTagsLoading] = useState(true);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentStores, setRecentStores] = useState<StoreApplication[]>([]);
   const [isSearchActive, setIsSearchActive] = useState(false);
@@ -171,13 +168,17 @@ export default function SearchScreen() {
     setIsSearchActive(false);
   };
 
-  const toggleTag = (tag: TagItem) => {
+  const handleSelectTag = (tag: TagItem) => {
     setSelectedTags((prevTags) => {
-      const isSelected = prevTags.some((t) => t.id === tag.id);
-      const nextTags = isSelected
-        ? prevTags.filter((t) => t.id !== tag.id)
-        : [...prevTags, tag];
+      const nextTags = [...prevTags, tag];
+      setIsSearchActive(nextTags.length > 0 || searchQuery.trim().length > 0);
+      return nextTags;
+    });
+  };
 
+  const handleDeselectTag = (tag: TagItem) => {
+    setSelectedTags((prevTags) => {
+      const nextTags = prevTags.filter((t) => t.id !== tag.id);
       setIsSearchActive(nextTags.length > 0 || searchQuery.trim().length > 0);
       return nextTags;
     });
@@ -231,22 +232,6 @@ export default function SearchScreen() {
     loadRecentStores();
   }, []);
 
-  useEffect(() => {
-    const fetchTags = async () => {
-      setTagsLoading(true);
-      const { data, error } = await supabase
-        .from("tags")
-        .select("id, name")
-        .order("name", { ascending: true });
-      if (!error && data) {
-        setAllTags(data as TagItem[]);
-      } else if (error) {
-        console.error("Error fetching tags:", error);
-      }
-      setTagsLoading(false);
-    };
-    fetchTags();
-  }, []);
 
   useEffect(() => {
     const fetchStores = async () => {
@@ -558,50 +543,17 @@ export default function SearchScreen() {
               <Icon name="close" size={26} color="#fff" />
             </TouchableOpacity>
           </View>
-          <View style={{ height: 6 }} />
-          {tagsLoading ? (
-            <ActivityIndicator size="small" color="#9333ea" />
-          ) : (
-            <ScrollView
-              contentContainerStyle={styles.panelTagsContent}
-              showsVerticalScrollIndicator
-              style={{ flex: 1 }}
-            >
-              {/* Tag chips in the panel: NOW SAME LENGTH as below the search bar */}
-              <View style={styles.panelTagsRowWrap}>
-                {allTags.map((tag) => {
-                  const isSelected = selectedTags.some((t) => t.id === tag.id);
-                  return (
-                    <TouchableOpacity
-                      key={tag.id}
-                      onPress={() => toggleTag(tag)}
-                      style={[
-                        styles.tagChip,
-                        styles.panelTagChip,
-                        isSelected ? styles.tagChipSelected : styles.tagChipUnselected,
-                        !isSelected && { backgroundColor: TAG_BG_UNSELECTED, borderColor: "#232837" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.tagText,
-                          isSelected ? styles.tagTextSelected : [styles.tagTextUnselected, { color: "#fff" }],
-                        ]}
-                      >
-                        {tag.name}
-                      </Text>
-                      {isSelected && (
-                        <Icon name="close" size={14} color="#fff" style={styles.tagCloseIcon} />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-                {allTags.length === 0 && !tagsLoading && (
-                  <Text style={{ color: "#aaa", fontSize: 13 }}>No tags available</Text>
-                )}
-              </View>
-            </ScrollView>
-          )}
+          <ScrollView
+            contentContainerStyle={styles.panelTagsContent}
+            showsVerticalScrollIndicator
+            style={{ flex: 1 }}
+          >
+            <TagSelector
+              selectedTags={selectedTags}
+              onSelect={handleSelectTag}
+              onDeselect={handleDeselectTag}
+            />
+          </ScrollView>
         </Animated.View>
       </View>
     );
@@ -621,7 +573,7 @@ export default function SearchScreen() {
           <View key={tag.id} style={[styles.tagChip, styles.selectedTagBadgeInline, styles.tagChipSelected]}>
             <Text style={[styles.tagText, styles.tagTextSelected]}>{tag.name}</Text>
             <TouchableOpacity
-              onPress={() => toggleTag(tag)}
+              onPress={() => handleDeselectTag(tag)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Icon name="close" size={14} color="#fff" style={styles.tagCloseIcon} />

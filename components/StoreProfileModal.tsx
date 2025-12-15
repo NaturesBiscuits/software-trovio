@@ -428,7 +428,7 @@ export default function StoreProfileModal({
       }
       let pickedResult = await ImagePicker.launchImageLibraryAsync({
         allowsMultipleSelection: true,
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         quality: 0.8,
         selectionLimit: 10,
         // No cropping for batch upload

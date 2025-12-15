@@ -9,7 +9,6 @@ import {
   Dimensions,
   Easing,
   FlatList,
-  Image,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -21,8 +20,10 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { cacheStores, getCachedStores } from '../../lib/storeCache';
+import { getCachedImageUrl } from '../../lib/imageCache';
 import { supabase } from '../../lib/supabase';
 import { STORE_TO_OPEN_KEY } from './notification';
 
@@ -222,9 +223,28 @@ const ProfileSidePanel = ({
   const { hasUnreadNotifications } = useNotifications();
   const panelWidth = Math.min(320, Dimensions.get('window').width * 0.86);
   const slideAnim = useRef(new Animated.Value(panelWidth)).current;
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
 
   // Remember if we've already navigated, to prevent duplicate navigation due to fast successive renders.
   const alreadyNavigatedRef = useRef(false);
+
+  // Load avatar URL when user changes
+  useEffect(() => {
+    const loadAvatar = async () => {
+      if (user?.avatar_url && user?.id) {
+        try {
+          const url = await getCachedImageUrl(user.avatar_url, user.id, 'tus');
+          setAvatarUrl(url || undefined);
+        } catch (error) {
+          console.warn('Error loading avatar URL:', error);
+          setAvatarUrl(undefined);
+        }
+      } else {
+        setAvatarUrl(undefined);
+      }
+    };
+    loadAvatar();
+  }, [user?.avatar_url, user?.id]);
 
   useEffect(() => {
     Animated.timing(slideAnim, {
@@ -283,7 +303,19 @@ const ProfileSidePanel = ({
 
         <View style={styles.sidePanelInfoArea}>
           <View style={{ position: 'relative' }}>
-            <Image source={{ uri: user?.avatar_url || 'https://via.placeholder.com/120' }} style={styles.panelAvatar} />
+            {avatarUrl ? (
+              <ExpoImage
+                source={{ uri: avatarUrl }}
+                style={styles.panelAvatar}
+                contentFit="cover"
+                transition={200}
+                placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
+              />
+            ) : (
+              <View style={[styles.panelAvatar, { backgroundColor: '#eee', justifyContent: 'center', alignItems: 'center' }]}>
+                <Icon name="person" size={32} color="#999" />
+              </View>
+            )}
             {hasUnreadNotifications && (
               <View style={styles.notificationDot} />
             )}
@@ -374,11 +406,30 @@ const RoutePreviewModal = ({
 export default function HomeScreen() {
   const router = useRouter();
   const { userProfile } = useUserProfile();
+  const [headerAvatarUrl, setHeaderAvatarUrl] = useState<string | undefined>(undefined);
 
   // Custom Hooks
   const { userCoords, hasLocPerm } = useLocationTracker();
   const { discoverIds, loading: discoverLoading } = useDiscoverStores(userProfile?.id, userCoords);
   const { forYouIds, loading: forYouLoading } = useForYouStores(userProfile?.id, userCoords);
+
+  // Load header avatar URL when userProfile changes
+  useEffect(() => {
+    const loadHeaderAvatar = async () => {
+      if (userProfile?.avatar_url && userProfile?.id) {
+        try {
+          const url = await getCachedImageUrl(userProfile.avatar_url, userProfile.id, 'tus');
+          setHeaderAvatarUrl(url || undefined);
+        } catch (error) {
+          console.warn('Error loading header avatar URL:', error);
+          setHeaderAvatarUrl(undefined);
+        }
+      } else {
+        setHeaderAvatarUrl(undefined);
+      }
+    };
+    loadHeaderAvatar();
+  }, [userProfile?.avatar_url, userProfile?.id]);
 
   // Fetch full store data based on ranked IDs (maintaining order) with pagination
   const [discoverStores, setDiscoverStores] = useState<StoreApplication[]>([]);
@@ -970,7 +1021,19 @@ export default function HomeScreen() {
             <Text style={styles.headerSubtitle}>Let's see where we take you next!</Text>
           </View>
           <TouchableOpacity onPress={() => setProfilePanelOpen(true)} style={styles.avatarContainer}>
-            <Image source={{ uri: userProfile?.avatar_url || 'https://via.placeholder.com/60' }} style={styles.avatar} />
+            {headerAvatarUrl ? (
+              <ExpoImage
+                source={{ uri: headerAvatarUrl }}
+                style={styles.avatar}
+                contentFit="cover"
+                transition={200}
+                placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
+              />
+            ) : (
+              <View style={[styles.avatar, { backgroundColor: '#eee', justifyContent: 'center', alignItems: 'center' }]}>
+                <Icon name="person" size={24} color="#999" />
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 

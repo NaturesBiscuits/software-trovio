@@ -85,17 +85,25 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
       const { data: { user } } = await supabase.auth.getUser();
       
       if (user) {
+        // Try to update language column, but handle gracefully if column doesn't exist
         const { error } = await supabase
           .from('profiles')
-          .update({ language: language, updated_at: new Date().toISOString() })
+          .update({ language: language })
           .eq('id', user.id);
 
         if (error) {
-          console.error('Error updating user language in profile:', error);
+          // Only log if it's not a "column doesn't exist" error
+          if (error.code !== 'PGRST204' && error.message?.includes('language') === false) {
+            console.error('Error updating user language in profile:', error);
+          } else {
+            // Column doesn't exist - this is okay, language still works via AsyncStorage
+            console.warn('Language column not found in profiles table. Language preference saved locally only.');
+          }
         }
       }
     } catch (error) {
-      console.error('Error syncing language with user profile:', error);
+      // Don't throw - language still works via AsyncStorage
+      console.warn('Could not sync language with user profile (column may not exist):', error);
     }
   };
 
@@ -129,18 +137,29 @@ export const useProfileLanguage = () => {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (user) {
-        const { data: profile } = await supabase
+        // Try to get language from profile, but handle gracefully if column doesn't exist
+        const { data: profile, error } = await supabase
           .from('profiles')
           .select('language')
           .eq('id', user.id)
           .single();
 
+        // If column doesn't exist, error.code will be PGRST204
+        if (error && error.code === 'PGRST204') {
+          // Column doesn't exist - this is okay, just use AsyncStorage language
+          console.warn('Language column not found in profiles table. Using local language preference.');
+          return;
+        }
+
         if (profile?.language && SUPPORTED_LANGUAGES.includes(profile.language)) {
           await changeLanguage(profile.language);
         }
       }
-    } catch (error) {
-      console.error('Error loading profile language:', error);
+    } catch (error: any) {
+      // Don't throw - gracefully handle missing column
+      if (error?.code !== 'PGRST204') {
+        console.error('Error loading profile language:', error);
+      }
     }
   };
 

@@ -1,14 +1,16 @@
 import UserTagPreferences from "@/components/UserTagPreferences";
 import { useUserProfile } from "@/context/UserProfileContext";
 import { supabase } from "@/lib/supabase";
+import { uploadCompressedImage } from "@/lib/imageUtils";
+import { getCachedImageUrl } from "@/lib/imageCache";
 import * as ImagePicker from "expo-image-picker";
+import { Image as ExpoImage } from "expo-image";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -46,28 +48,35 @@ export default function ProfileScreen() {
       if (result.canceled) return;
       const asset = result.assets[0];
       let uri = asset.uri;
-      const ext = uri.split(".").pop() || "jpg";
       const userId = userProfile?.id || "user";
-      const filePath = `profiles/${userId}/avatar.${ext}`;
+      const filePath = `profiles/${userId}/avatar.jpg`;
 
-      let file: any;
-      file = await fetch(uri).then(res => res.blob());
-
-      const { error: uploadError } = await supabase.storage
-        .from("tus")
-        .upload(filePath, file, {
-          upsert: true,
-          contentType: `image/${ext === "jpg" ? "jpeg" : ext}`,
-        });
-      if (uploadError) {
-        Alert.alert(t("Upload failed"), uploadError.message);
-        return;
+      // Delete old avatar if it exists (to allow overwrite)
+      const oldAvatarPath = userProfile?.avatar_url;
+      if (oldAvatarPath) {
+        try {
+          await supabase.storage.from("tus").remove([oldAvatarPath]);
+        } catch (deleteError) {
+          // Ignore delete errors - file might not exist
+          console.warn("Failed to delete old avatar:", deleteError);
+        }
       }
+
+      // Upload using the working method (expo-file-system + Buffer)
+      const uploadedPath = await uploadCompressedImage(
+        uri,
+        filePath,
+        "tus",
+        {
+          compress: 0.5,
+          maxWidth: 512, // avatars don't need to be huge
+        }
+      );
 
       // Update DB with the storage path (not a public URL)
       const { error: updateErr } = await supabase
         .from("profiles")
-        .update({ avatar_url: filePath })
+        .update({ avatar_url: uploadedPath })
         .eq("id", userProfile?.id);
 
       if (updateErr) {
@@ -75,10 +84,11 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Show image immediately by generating a public URL for rendering
-      const { data: publicData } = supabase.storage.from("tus").getPublicUrl(filePath);
-      const publicUrl = publicData?.publicUrl;
-      setAvatar(publicUrl);
+      // Show image immediately by getting a signed URL (handles private buckets)
+      const avatarUrl = await getCachedImageUrl(uploadedPath, userId, "tus");
+      if (avatarUrl) {
+        setAvatar(avatarUrl);
+      }
       refreshProfile && (await refreshProfile());
     } catch (e: any) {
       Alert.alert(t("Failed to change photo"), e?.message || String(e));
@@ -86,12 +96,34 @@ export default function ProfileScreen() {
       setUploadingPhoto(false);
     }
   };
-  // Compute public URL only for rendering; DB stores the path
-  const avatarUri =
-    avatar ??
-    (userProfile?.avatar_url
-      ? supabase.storage.from("tus").getPublicUrl(userProfile.avatar_url).data.publicUrl
-      : undefined);
+  // Get avatar URL using cached image URL helper (handles signed URLs for private buckets)
+  const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
+
+  // Update avatar URL when userProfile changes
+  useEffect(() => {
+    const loadAvatarUrl = async () => {
+      if (avatar) {
+        setAvatarUri(avatar);
+        return;
+      }
+
+      if (userProfile?.avatar_url && userProfile?.id) {
+        try {
+          // Use the cached image URL helper which handles signed URLs properly
+          const url = await getCachedImageUrl(userProfile.avatar_url, userProfile.id, "tus");
+          setAvatarUri(url || undefined);
+        } catch (error) {
+          console.warn("Error loading avatar URL:", error);
+          setAvatarUri(undefined);
+        }
+      } else {
+        setAvatarUri(undefined);
+      }
+    };
+
+    loadAvatarUrl();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile?.avatar_url, userProfile?.id, avatar]);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#fff" }} contentContainerStyle={{ padding: 24 }}>
@@ -120,7 +152,17 @@ export default function ProfileScreen() {
                 <ActivityIndicator size={32} color="#007AFF" />
               </View>
             ) : avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={s.profileImage} />
+              <ExpoImage
+                source={{ uri: avatarUri }}
+                style={s.profileImage}
+                contentFit="cover"
+                transition={200}
+                placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
+                onError={(error) => {
+                  console.warn("Failed to load avatar image:", error);
+                  setAvatar(undefined);
+                }}
+              />
             ) : (
               <View style={[s.profileImage, s.defaultProfileContainer]}>
                 <Icon name="person" size={50} color="#999" />

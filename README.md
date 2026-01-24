@@ -1,50 +1,212 @@
-# Welcome to your Expo app 👋
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo CLI
+bash-  npm install -g expo-cli
+install independencies - npm install
 
-## Get started
 
-1. Install dependencies
 
-   ```bash
-   npm install
-   ```
+What is it all about ...
 
-2. Start the app
+   Trovio is a location-based store discovery and recommendation platform designed to connect users with nearby businesses that match their interests, preferences, and behavior.
+   The system combines geospatial ranking, content-based personalization, and collaborative filtering to produce meaningful, adaptive recommendations.
 
-   ```bash
-   npx expo start
-   ```
+1. Application Overview
 
-In the output, you'll find options to open the app in a
+   Trovio provides two primary recommendation feeds:
+   For You – a personalized feed tailored to each user
+   Discover – a non-personalized, exploratory feed based on location and popularity
+   
+   The application is built with:
+   Frontend: React Native (Expo)
+   Backend: Supabase (PostgreSQL + Storage)
+   Authentication: Supabase Auth
+   Media Storage: Supabase Storage
+   Recommendation Engine: SQL-based ranking with precomputed CF scores
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+2. Core Database Structure
+   2.1 User-Related Tables
+   
+   auth.users - System authentication table (managed by Supabase).
+   profiles - Stores public user information.
 
-## Get a fresh project
+   | Column       | Purpose                          |
+   | ------------ | -------------------------------- |
+   | `id`         | User ID (FK → auth.users)        |
+   | `username`   | Public username                  |
+   | `full_name`  | Display name                     |
+   | `avatar_url` | Path to profile image in storage |
+   | `role`       | customer / proprietor            |
+   | `type`       | user / admin                     |
+   | `updated_at` | Profile update timestamp         |
 
-When you're ready, run:
 
-```bash
-npm run reset-project
-```
+2.2 Preference & Interaction Tables
+   user_tags - Stores user-selected interest tags
+   
+   | Column    | Purpose       |
+   | --------- | ------------- |
+   | `user_id` | User          |
+   | `tag_id`  | Tag reference |
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
-## Learn more
+tags Defines tags and their associated categories.
 
-To learn more about developing your project with Expo, look at the following resources:
+   | Column       | Purpose        |
+   | ------------ | -------------- |
+   | `name`       | Tag name       |
+   | `categories` | Category array |
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
 
-## Join the community
+user_category_scores - Aggregated preference weights per user.
 
-Join our community of developers creating universal apps.
+   | Column     | Purpose           |
+   | ---------- | ----------------- |
+   | `user_id`  | User              |
+   | `category` | Category          |
+   | `score`    | Preference weight |
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+engagement_events - Tracks user behavior.
+
+   | Column       | Purpose                            |
+   | ------------ | ---------------------------------- |
+   | `user_id`    | User                               |
+   | `store_id`   | Store                              |
+   | `engagement` | visit / favorite / promotion_click |
+   | `created_at` | Timestamp                          |
+
+2.3 Store-Related Tables
+store_applications - Holds store data and application status.
+
+   | Column                   | Purpose                       |
+   | ------------------------ | ----------------------------- |
+   | `id`                     | Store ID                      |
+   | `store_name`             | Store name                    |
+   | `tags`                   | Store tags                    |
+   | `latitude` / `longitude` | Location                      |
+   | `status`                 | pending / accepted / rejected |
+
+Only accepted stores are visible in recommendation feeds.
+
+
+3. Recommendation Algorithms
+4. 3.1 For You Algorithm (Personalized)
+
+The For You feed is a hybrid recommendation algorithm combining:
+   Location relevance
+   Content-based personalization
+   Collaborative filtering (optional boost)
+
+Inputs
+   User location
+   User tags and categories
+   Store tags and categories
+   Engagement history
+   CF similarity scores
+
+Output
+   Ordered list of store_id values (ranking preserved)
+   
+
+3.1.1 For You Scoring Components
+
+   | Component      | Description                         |
+   | -------------- | ----------------------------------- |
+   | Distance Score | Penalizes far stores                |
+   | Tag Score      | Overlap between user and store tags |
+   | Category Score | Weighted category relevance         |
+   | CF Score       | Boost from similar users’ behavior  |
+
+
+3.1.2 For You Final Score
+   FinalScoreu,s​=0.30⋅Ds​+0.35⋅Tu,s​+0.20⋅Cu,s​+0.15⋅CFu,s
+      𝐷𝑠 = normalized distance score
+      𝑇u,s = tag match score
+      𝐶u,s = category relevance score
+      𝐶𝐹u,s = collaborative filtering score'
+      
+3.2 Discover Algorithm (Exploratory)
+
+The Discover feed is designed for exploration and cold-start resilience.
+Discover Ranking Factors
+   Distance from user
+   Store popularity (favorites & visits)
+   Active promotions
+   Tag/category relevance (light weighting)
+This ensures that even new users receive meaningful suggestions.
+
+
+4. Collaborative Filtering (CF)
+   
+4.1 CF Design
+   
+   Trovio uses item-based collaborative filtering implemented via precomputation.
+   
+   CF answers the question:
+   
+   “What stores do users with similar behavior also like?”
+
+4.2 CF Data Sources
+
+   | Table                | Usage                     |
+   | -------------------- | ------------------------- |
+   | `engagement_events`  | Shared store interactions |
+   | `user_tags`          | Behavioral similarity     |
+   | `store_applications` | Store metadata            |
+
+
+4.3 CF Precomputation Table
+
+   | Column       | Purpose                    |
+   | ------------ | -------------------------- |
+   | `user_id`    | Target user                |
+   | `store_id`   | Recommended store          |
+   | `cf_score`   | Strength of recommendation |
+   | `updated_at` | Refresh timestamp          |
+
+
+4.4 CF Logic (Conceptual)
+If:
+   User A and User B like the same stores
+   User B likes an additional store
+
+Then:
+   That store receives a positive CF boost for User A
+Views contribute less weight than favorites.
+
+5. Cold Start Strategy
+Cold start is handled server-side:
+   If a user has no tags AND no engagements:
+   The system returns popular nearby stores
+   Once the user interacts:
+   The full For You algorithm takes over automatically
+   No frontend logic is required.
+
+6. Media & Profile Handling
+   Profile images are uploaded to Supabase Storage
+   Database stores storage paths, not public URLs
+   Public URLs are generated dynamically at runtime
+   Images are compressed client-side before upload
+
+7. Data Flow Summary
+   Frontend calls a single RPC function
+   Database decides:
+   Personalized feed OR fallback feed
+   Returns ordered store IDs
+   Frontend fetches full store records
+   Order is preserved end-to-end
+
+8. Design Principles
+   SQL-first algorithms (transparent & debuggable)
+   Precomputed CF (performance & scalability)
+   Deterministic ranking (stable UX)
+   Separation of concerns (routing vs ranking)
+
+9. Why This Approach Works
+   Personalized without overfitting
+   Scales with user growth
+   Cold-start safe
+   Minimal frontend complexity
+   Fully auditable recommendation logic​
+​

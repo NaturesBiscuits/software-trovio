@@ -1,7 +1,7 @@
 
 Expo CLI
 bash-  npm install -g expo-cli
-install independencies - npm install
+, install independencies - npm install
 
 
 

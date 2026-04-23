@@ -19,6 +19,7 @@ export default function LandingPageScreen() {
   const { t } = useTranslation();
   const { currentLanguage, changeLanguage } = useLanguage();
   const [selectedLanguage, setSelectedLanguage] = useState<string>(currentLanguage);
+  const selectedLanguageLabel = selectedLanguage === 'az' ? t('Azərbaycan dili') : t('English');
 
   const handleLanguageSelect = async (language: string) => {
     setSelectedLanguage(language);
@@ -91,6 +92,11 @@ export default function LandingPageScreen() {
             </Text>
           </View>
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.selectionSummaryContainer}>
+        <Text style={styles.selectionSummaryLabel}>{t('Selected language')}:</Text>
+        <Text style={styles.selectionSummaryValue}>{selectedLanguageLabel}</Text>
       </View>
 
       {/* Settings Note */}
@@ -194,6 +200,24 @@ const styles = StyleSheet.create({
   noteContainer: {
     marginTop: 30,
     paddingHorizontal: 10,
+  },
+
+  selectionSummaryContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+
+  selectionSummaryLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    opacity: 0.75,
+  },
+
+  selectionSummaryValue: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 4,
   },
 
   noteText: {

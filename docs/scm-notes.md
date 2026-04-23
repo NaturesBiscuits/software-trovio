@@ -10,6 +10,12 @@
 
 This document details the merge conflict resolution process conducted during the Git mastery workshop, demonstrating practical SCM best practices and conflict handling strategies.
 
+### Additional Week 5 Exercise
+- Feature branch: `feature/branch-naming-rules`
+- Simulation branch: `bugfix/conflict-sim`
+- Conflict file: `docs/scm-notes.md` (same line edited on both branches)
+- Resolution: manually merged both branch intents into one final statement and completed merge commit.
+
 ---
 
 ## Scenario Summary

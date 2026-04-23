@@ -1,0 +1,30 @@
+name: Branch Naming Rules
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+  push:
+    branches-ignore:
+      - main
+      - dev
+
+jobs:
+  validate-branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch naming convention
+        shell: bash
+        run: |
+          BRANCH_NAME="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          echo "Checking branch: ${BRANCH_NAME}"
+
+          if [[ "${BRANCH_NAME}" =~ ^(feature|bugfix|hotfix)\/[a-z0-9._-]+$ ]]; then
+            echo "Branch name is valid."
+            exit 0
+          fi
+
+          echo "Invalid branch name: ${BRANCH_NAME}"
+          echo "Use one of: feature/<name>, bugfix/<name>, hotfix/<name>"
+          exit 1

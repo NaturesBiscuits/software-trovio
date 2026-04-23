@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, Modal, FlatList } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import { styles as s} from '../../styles/authStyles';
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";

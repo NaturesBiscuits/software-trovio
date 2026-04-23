@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import { 
-  SafeAreaView, 
   StatusBar, 
   StyleSheet, 
   Text, 
   TouchableOpacity, 
   View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Ionicons as Icon } from '@expo/vector-icons';
 
 const LANDING_PAGE_STORAGE_KEY = '@trovio_landing_page_seen';
 

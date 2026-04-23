@@ -13,7 +13,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Ionicons as Icon } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { getCachedImageUrls } from '../lib/imageCache';
 import * as ImagePicker from 'expo-image-picker';
@@ -145,7 +145,7 @@ export default function StoreProfileModal({
         }),
       ]).start();
     }
-  }, [visible]);
+  }, [cardOpacity, imageOpacity, modalOpacity, modalTranslateY, visible]);
 
   // Animate image fade-in when photos load
   useEffect(() => {
@@ -158,7 +158,7 @@ export default function StoreProfileModal({
         useNativeDriver: true,
       }).start();
     }
-  }, [photoUrls.length, loadingPhotos]);
+  }, [imageOpacity, photoUrls.length, loadingPhotos]);
 
   // Sync isLiked state with AsyncStorage on store change/modal open
   useEffect(() => {
@@ -171,7 +171,7 @@ export default function StoreProfileModal({
       });
     }
     return () => { ignore = true; };
-  }, [store?.id, visible]);
+  }, [savedMessageOpacity, store?.id, visible]);
 
   // Record a store profile view whenever a signed-in, non-owner user opens the modal
   useEffect(() => {
@@ -328,7 +328,7 @@ export default function StoreProfileModal({
       try {
         const urls = await getCachedImageUrls(store.photos_url, store.user_id);
         setPhotoUrls(urls.filter((url): url is string => Boolean(url)));
-      } catch (error) {
+      } catch {
         setPhotoUrls([]);
       } finally {
         setLoadingPhotos(false);
@@ -449,7 +449,7 @@ export default function StoreProfileModal({
         const response = await fetch(file.uri);
         const blob = await response.blob();
 
-        const { data, error } = await supabase.storage
+        const { error } = await supabase.storage
           .from('user-uploaded-photos')
           .upload(`${store.user_id}/${filename}`, blob, {
             contentType: 'image/jpeg',
@@ -479,7 +479,7 @@ export default function StoreProfileModal({
         const newPhotoUrls = await getCachedImageUrls(uploadedUrls, store.user_id!);
         setPhotoUrls(prev => prev.concat(newPhotoUrls.filter(Boolean) as string[]));
       }
-    } catch (e) {
+    } catch {
       alert('Failed to upload photo(s)');
     } finally {
       setUploading(false);

@@ -1,9 +1,21 @@
 import React, { useState } from "react";
 import { Text, View, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 
-const privacySubOptions = [
+type IconName = React.ComponentProps<typeof Icon>["name"];
+type SettingsSubOption = {
+  title: string;
+  icon: IconName;
+  onPress: (router: ReturnType<typeof useRouter>) => void;
+};
+type LanguageOption = {
+  title: string;
+  code: string;
+  icon: IconName;
+};
+
+const privacySubOptions: SettingsSubOption[] = [
   {
     title: "Password Reset",
     icon: "key-outline",
@@ -17,7 +29,7 @@ const privacySubOptions = [
   },
 ];
 
-const preferenceSubOptions = [
+const preferenceSubOptions: SettingsSubOption[] = [
   {
     title: "Store Preference",
     icon: "storefront-outline",
@@ -35,7 +47,7 @@ const preferenceSubOptions = [
   },
 ];
 
-const languageOptions = [
+const languageOptions: LanguageOption[] = [
   { title: "English", code: "en", icon: "ellipse-outline" },
   { title: "Filipino", code: "fil", icon: "ellipse-outline" },
   { title: "简体中文", code: "zh", icon: "ellipse-outline" },

@@ -13,7 +13,7 @@ import {
   KeyboardAvoidingView,
   InputAccessoryView,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Ionicons as Icon } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { supabase } from '../lib/supabase';

@@ -45,7 +45,7 @@ export default function Index() {
             // Sign out to clear invalid tokens
             try {
               await supabase.auth.signOut();
-            } catch (signOutError) {
+            } catch {
               // Ignore sign out errors
             }
             if (isMounted) {
@@ -72,7 +72,7 @@ export default function Index() {
           console.warn('Refresh token invalid or expired. Clearing session.');
           try {
             await supabase.auth.signOut();
-          } catch (signOutError) {
+          } catch {
             // Ignore sign out errors
           }
         }
@@ -100,7 +100,7 @@ export default function Index() {
         } else if (typeof subAny?.unsubscribe === 'function') {
           subAny.unsubscribe();
         }
-      } catch (e) {
+      } catch {
         // Silently ignore errors during cleanup
       }
     };

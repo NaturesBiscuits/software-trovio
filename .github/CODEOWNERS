@@ -1,0 +1,51 @@
+# Trovio CODEOWNERS
+# This file defines who should review changes to various parts of the codebase
+# https://help.github.com/articles/about-code-owners/
+
+# Global Owners
+* @NaturesBiscuits/dev-team
+
+# Testing & QA
+/__tests__/                     @NaturesBiscuits/qa-team
+/docs/qa-plan.md              @NaturesBiscuits/qa-team
+/docs/defect-log.md           @NaturesBiscuits/qa-team
+/jest.config.js               @NaturesBiscuits/qa-team
+
+# Core Application
+/app/**                         @NaturesBiscuits/dev-team
+/components/**                  @NaturesBiscuits/ui-team
+/components/ui/**              @NaturesBiscuits/ui-team
+/screens/**                     @NaturesBiscuits/dev-team
+
+# Styling & Design System
+/constants/designTokens.ts     @NaturesBiscuits/design-team
+/constants/theme.ts            @NaturesBiscuits/design-team
+/styles/**                      @NaturesBiscuits/design-team
+/components/ui/**              @NaturesBiscuits/design-team
+
+# Utilities & Helpers
+/utils/**                       @NaturesBiscuits/dev-team
+/lib/**                         @NaturesBiscuits/dev-team
+/hooks/**                       @NaturesBiscuits/dev-team
+
+# API & Services
+/services/**                    @NaturesBiscuits/backend-team
+/lib/supabase.ts               @NaturesBiscuits/backend-team
+
+# Internationalization
+/locales/**                     @NaturesBiscuits/i18n-team
+/services/i18next.js          @NaturesBiscuits/i18n-team
+
+# Configuration
+/package.json                   @NaturesBiscuits/dev-team
+/tsconfig.json                 @NaturesBiscuits/dev-team
+/eslint.config.js             @NaturesBiscuits/dev-team
+/app.config.ts                @NaturesBiscuits/dev-team
+/.github/**                     @NaturesBiscuits/dev-team
+
+# Documentation
+/docs/**                        @NaturesBiscuits/product-team
+
+# CI/CD & DevOps
+/.github/workflows/**          @NaturesBiscuits/devops-team
+/eas.json                      @NaturesBiscuits/devops-team

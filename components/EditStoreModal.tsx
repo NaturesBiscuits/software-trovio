@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Image as ExpoImage } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,7 +16,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Ionicons as Icon } from '@expo/vector-icons';
 import { getCachedImageUrls } from '../lib/imageCache';
 import { uploadCompressedImage } from '../lib/imageUtils';
 import { supabase } from '../lib/supabase';
@@ -59,7 +59,6 @@ export default function EditStoreModal({
   const [photoPaths, setPhotoPaths] = useState<string[]>([]); // Array of photo paths from database
   const [photoUris, setPhotoUris] = useState<string[]>([]); // Array of local URIs for new photos
   const [promotions, setPromotions] = useState<Promotion[]>([]);
-  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [loadingPromotions, setLoadingPromotions] = useState(false);
   const [extendingPromoId, setExtendingPromoId] = useState<string | null>(null);
@@ -67,24 +66,8 @@ export default function EditStoreModal({
   const [selectedPromoForExtension, setSelectedPromoForExtension] = useState<Promotion | null>(null);
   const [newExpirationDate, setNewExpirationDate] = useState<Date>(new Date());
 
-  // Initialize form data when store changes
-  useEffect(() => {
-    if (store && visible) {
-      setStoreName(store.store_name || '');
-      setDescription(store.description || '');
-      setAddress(store.address || '');
-      setPhotoPaths(store.photos_url || []);
-      setPhotoUris([]);
-      setTagSearch('');
-      fetchPromotions();
-      loadPhotoUrls();
-      loadTags();
-      loadAllAvailableTags();
-    }
-  }, [store, visible]);
-
   // Load all available tags from database
-  const loadAllAvailableTags = async () => {
+  const loadAllAvailableTags = useCallback(async () => {
     setLoadingTags(true);
     try {
       const { data, error } = await supabase
@@ -104,10 +87,10 @@ export default function EditStoreModal({
     } finally {
       setLoadingTags(false);
     }
-  };
+  }, []);
 
   // Load tags from database and convert store.tags (string[]) to TagItem[]
-  const loadTags = async () => {
+  const loadTags = useCallback(async () => {
     if (!store?.tags || store.tags.length === 0) {
       setTags([]);
       return;
@@ -141,9 +124,9 @@ export default function EditStoreModal({
       // Fallback: create TagItem from names without IDs
       setTags(store.tags.map((name, index) => ({ id: index, name })));
     }
-  };
+  }, [store]);
 
-  const loadPhotoUrls = async () => {
+  const loadPhotoUrls = useCallback(async () => {
     if (!store || !store.photos_url || !store.user_id) {
       setPhotos([]);
       setPhotoPaths([]);
@@ -160,9 +143,9 @@ export default function EditStoreModal({
       setPhotoPaths(store.photos_url || []);
       setPhotos([]);
     }
-  };
+  }, [store]);
 
-  const fetchPromotions = async () => {
+  const fetchPromotions = useCallback(async () => {
     if (!store?.id) return;
     setLoadingPromotions(true);
     try {
@@ -180,7 +163,23 @@ export default function EditStoreModal({
     } finally {
       setLoadingPromotions(false);
     }
-  };
+  }, [store?.id]);
+
+  // Initialize form data when store changes
+  useEffect(() => {
+    if (store && visible) {
+      setStoreName(store.store_name || '');
+      setDescription(store.description || '');
+      setAddress(store.address || '');
+      setPhotoPaths(store.photos_url || []);
+      setPhotoUris([]);
+      setTagSearch('');
+      void fetchPromotions();
+      void loadPhotoUrls();
+      void loadTags();
+      void loadAllAvailableTags();
+    }
+  }, [fetchPromotions, loadAllAvailableTags, loadPhotoUrls, loadTags, store, visible]);
 
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -531,7 +530,7 @@ export default function EditStoreModal({
                         tag.name.toLowerCase().includes(tagSearch.toLowerCase()) &&
                         !tags.some((selectedTag) => selectedTag.id === tag.id)
                     ).length === 0 && (
-                      <Text style={styles.noResultsText}>No tags found matching "{tagSearch}"</Text>
+                      <Text style={styles.noResultsText}>No tags found matching &quot;{tagSearch}&quot;</Text>
                     )}
                   </View>
                 )}

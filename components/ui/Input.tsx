@@ -36,7 +36,7 @@ export function Input({
   style,
   ...props
 }: InputProps) {
-  const { colors, typography, spacing, borderRadius, opacity } = useDesignSystem();
+  const { colors, typography, spacing, borderRadius } = useDesignSystem();
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -55,8 +55,8 @@ export function Input({
             paddingHorizontal: spacing.base,
             paddingVertical: spacing.sm,
           },
-          leftIcon && { paddingLeft: spacing.sm },
-          rightIcon && { paddingRight: spacing.sm },
+          leftIcon ? { paddingLeft: spacing.sm } : null,
+          rightIcon ? { paddingRight: spacing.sm } : null,
         ]}
       >
         {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}

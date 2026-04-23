@@ -30,7 +30,7 @@ export default function MapPicker({ onLocationSelect }: MapPickerProps) {
       setMarker({ latitude, longitude });
       onLocationSelect({ latitude, longitude });
     })();
-  }, []);
+  }, [onLocationSelect]);
 
   const handleMapPress = (e: any) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;

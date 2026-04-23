@@ -2,9 +2,10 @@ import { getCachedImageUrls } from "@/lib/imageCache";
 import { supabase } from "@/lib/supabase";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import React, { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons as Icon } from "@expo/vector-icons";
 
 type StoreApplication = {
   id: string;
@@ -24,7 +25,7 @@ export default function AdminReviewList() {
   const [imageUrls, setImageUrls] = useState<Map<string, string[]>>(new Map());
   const [imageLoading, setImageLoading] = useState<Map<string, boolean>>(new Map());
 
-  const fetchApplications = async () => {
+  const fetchApplications = useCallback(async () => {
     const { data, error } = await supabase
       .from("store_applications")
       .select("*")
@@ -58,9 +59,9 @@ export default function AdminReviewList() {
     });
 
     return sorted;
-  };
+  }, []);
 
-  const loadData = async (isRefresh = false) => {
+  const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -75,11 +76,11 @@ export default function AdminReviewList() {
     } else {
       setLoading(false);
     }
-  };
+  }, [fetchApplications]);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
   // Load images for all applications
   useEffect(() => {

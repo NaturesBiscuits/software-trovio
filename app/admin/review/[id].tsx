@@ -10,7 +10,6 @@ import {
   Alert,
   Dimensions,
   Modal,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,7 +17,8 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
-import Icon from "react-native-vector-icons/Ionicons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons as Icon } from "@expo/vector-icons";
 
 type StoreApplication = {
   id: string;

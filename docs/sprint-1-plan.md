@@ -13,14 +13,16 @@ Build the first usable discovery flow for Trovio so users can set basic preferen
 | ST-004 | View detailed space information | High | 5 | Juan Sapanaterm | Users can evaluate a space before saving or requesting it. |
 | ST-009 | Onboarding for location and preferences | High | 5 | clydeee03 | New users can provide signals for recommendations. |
 | ST-011 | Map-based search and distance information | Med | 5 | Juan Sapanaterm | Users can understand where listed spaces are located. |
+| ST-013 | Show available dates and time slots | High | 5 | Art J | Users can avoid requesting unavailable rental periods. |
 
-Total planned effort: 25 story points.
+Total planned effort: 30 story points.
 
 ## Deliverables
 
 - Discover feed with nearby available spaces.
 - Category and tag filtering controls.
 - Space detail page with listing information and availability.
+- Availability date or time-slot display on the detail flow.
 - New-user onboarding for location permission and preference tags.
 - Map or location view with distance context for listings.
 
@@ -53,7 +55,12 @@ Total planned effort: 25 story points.
 | Add onboarding preference selection flow. | clydeee03 | ST-009 |
 | Store selected user tags and categories. | clydeee03 | ST-009 |
 | Add map markers or distance context to result cards. | Juan Sapanaterm | ST-011 |
+| Define and display availability dates or time slots. | Art J | ST-013 |
 | Validate acceptance criteria and document issues. | Juan Sapanaterm | All Sprint 1 stories |
+
+## Change Request Simulation
+
+CR-001 adds ST-013 so users can see available dates or time slots before making a rental request. The story is added to Sprint 1 because it supports the space detail flow and reduces request conflicts, increasing the sprint plan from 25 to 30 story points.
 
 ## Sprint Review Checklist
 
@@ -61,5 +68,6 @@ Total planned effort: 25 story points.
 - Demonstrate Discover with nearby spaces.
 - Apply and clear filters.
 - Open a space detail page from Discover.
+- Show available dates or time slots on a space detail page.
 - Show distance or map context for a listed space.
 - Review known limitations and backlog updates.

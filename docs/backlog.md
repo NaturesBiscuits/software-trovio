@@ -22,6 +22,7 @@ The project scope is realistic for a 15-week build because Sprint 1 focuses on d
 | ST-010 | As a user, I want recommendations improved by similar user behavior so that I can discover spaces I may not search for directly. | Med | 8 |
 | ST-011 | As a user, I want map-based search and distance information so that I can understand where each space is located. | Med | 5 |
 | ST-012 | As an admin, I want to review submitted listings so that unsafe, incomplete, or invalid spaces are not published. | High | 5 |
+| ST-013 | As a user, I want to see available dates and time slots for a space so that I can avoid requesting unavailable rental periods. | High | 5 |
 
 ## Acceptance Criteria
 
@@ -108,3 +109,10 @@ The project scope is realistic for a 15-week build because Sprint 1 focuses on d
 - Admins can approve or reject listings with a reason.
 - Approved listings become visible in Discover and For You.
 - Rejected listings remain hidden from public results.
+
+### ST-013: Availability Dates and Time Slots
+
+- Space detail pages show available dates or time ranges when the owner has provided them.
+- Users cannot submit a request for a date or time marked unavailable.
+- Availability information is shown before the user starts a rental request.
+- If availability has not been configured, the app shows a clear contact-owner or request-confirmation state.

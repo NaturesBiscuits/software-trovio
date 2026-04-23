@@ -8,7 +8,7 @@ import {
   View
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 
 type PreferenceRow = {
   tag_id: string;
@@ -25,12 +25,9 @@ export default function UserTagPreferences({ userId }: { userId: string }) {
   const [allTags, setAllTags] = useState<{ id: string; name: string; categories?: string[] }[]>([]);
   const [userTags, setUserTags] = useState<TagItem[]>([]);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
-      setLoading(true);
-
       // Fetch all tags
     const { data: tagList } = await supabase
       .from("tags")
@@ -52,8 +49,6 @@ export default function UserTagPreferences({ userId }: { userId: string }) {
           name: row.tags.name,
         }))
       );
-
-      setLoading(false);
     };
 
     loadData();

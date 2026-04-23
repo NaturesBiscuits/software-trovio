@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Text as RNText, TextProps, TextStyle, StyleSheet } from 'react-native';
+import { Text as RNText, TextProps, TextStyle } from 'react-native';
 import { useDesignSystem } from '@/hooks/use-design-system';
 
 export type TextVariant =

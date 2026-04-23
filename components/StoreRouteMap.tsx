@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, Modal, SafeAreaView, StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { Dimensions, Modal, StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { LatLng, Marker, Polyline, Region } from 'react-native-maps';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Ionicons as Icon } from '@expo/vector-icons';
 
 interface StoreRouteMapProps {
   origin?: LatLng | null;
@@ -13,7 +14,7 @@ interface StoreRouteMapProps {
 
 // Consistent map size across all devices
 // Using percentage-based width with a max constraint for consistency
-const { width: deviceWidth, height: deviceHeight } = Dimensions.get('window');
+const { width: deviceWidth } = Dimensions.get('window');
 // Use 90% of screen width with max 350px and min padding of 20px on each side
 const MAP_WIDTH = Math.min(350, deviceWidth - 40);
 // Consistent aspect ratio (approximately 16:9)
@@ -29,7 +30,6 @@ export default function StoreRouteMap({
   const mapRef = useRef<MapView | null>(null);
   const expandedMapRef = useRef<MapView | null>(null);
   const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
-  const [routeLoading, setRouteLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
   const region = useMemo<Region | undefined>(() => {
@@ -80,7 +80,6 @@ export default function StoreRouteMap({
     }
     let isCancelled = false;
     const fetchRoute = async () => {
-      setRouteLoading(true);
       try {
         // Request route with alternatives to find the shortest path by road
         // OSRM returns routes sorted by duration, but we can compare distances
@@ -119,8 +118,6 @@ export default function StoreRouteMap({
           console.warn('Route fetch failed', error);
           setRouteCoords([]);
         }
-      } finally {
-        if (!isCancelled) setRouteLoading(false);
       }
     };
     fetchRoute();

@@ -6,18 +6,18 @@ Team members are based on contributors visible in the repository history. Roles 
 
 | Team Member | Role | Responsibilities |
 | --- | --- | --- |
-| John Flores | PM/Scrum | Maintains sprint focus, facilitates planning, tracks blockers, and confirms priorities. |
-| Juan Sapanaterm | QA Lead | Reviews acceptance criteria, prepares test notes, validates story completion, and records defects. |
-| clydeee03 | DevOps Lead | Checks setup, build readiness, environment variables, Supabase configuration, and deployment concerns. |
-| John Flores | Docs Lead | Keeps `docs/backlog.md`, `docs/sprint-1-plan.md`, `docs/schedule.md`, and `docs/team-roles.md` current. |
-| Art J | Database | Manages Supabase database tables, migrations, row-level security policies, relationships, and data access for Trovio features. |
+| clydeee03 | PM/Scrum | Maintains sprint focus, facilitates planning, tracks blockers, and confirms priorities. |
+| Myka Baclayo | QA Lead | Reviews acceptance criteria, prepares test notes, validates story completion, and records defects. |
+| John Flores | DevOps Lead | Checks setup, build readiness, environment variables, Supabase configuration, and deployment concerns. |
+| Esteve | Docs Lead | Keeps `docs/backlog.md`, `docs/sprint-1-plan.md`, `docs/schedule.md`, and `docs/team-roles.md` current. |
+| Art J  | Database  | Supabase
 
 ## Rotation Plan
 
 | Weeks | PM/Scrum | QA Lead | DevOps Lead | Docs Lead |
 | --- | --- | --- | --- | --- |
 | 2-4 | John Flores | Juan Sapanaterm | clydeee03 | John Flores |
-| 5-7 | Juan Sapanaterm | clydeee03 | John Flores | Juan Sapanaterm |
+| 5-7 | Juan Sapanaterm | clydeee03 | John Flores | Art J |
 | 8-10 | clydeee03 | John Flores | Juan Sapanaterm | clydeee03 |
 | 11-13 | John Flores | Juan Sapanaterm | clydeee03 | Juan Sapanaterm |
 | 14-15 | Juan Sapanaterm | clydeee03 | John Flores | John Flores |

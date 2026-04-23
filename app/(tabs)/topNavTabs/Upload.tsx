@@ -19,7 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 
 
 // Ensure Buffer is available in React Native runtime
@@ -211,56 +211,6 @@ export default function UploadFilesScreen() {
     console.error('All upload strategies failed:', err);
     throw err;
   };
-
-  const uploadToStorage_fetch = async (uri: string, storagePath: string) => {
-    const res = await fetch(uri);
-    const blob = await res.blob();
-    const l = (uri || '').toLowerCase();
-    const inferFromExt = () => {
-      if (l.endsWith('.jpg') || l.endsWith('.jpeg')) return 'image/jpeg';
-      if (l.endsWith('.png')) return 'image/png';
-      if (l.endsWith('.pdf')) return 'application/pdf';
-      return 'application/octet-stream';
-    };
-    const contentType = blob.type || inferFromExt();
-    const { data, error } = await supabase.storage.from('tus').upload(storagePath, blob, { contentType, upsert: true });
-    if (error) throw error;
-    return data?.path;
-  }
-
-  const uploadToStorage_FileAPI = async (uri: string, storagePath: string) => {
-    // infer content type by extension
-    const lower = (uri || '').toLowerCase();
-    const contentType = lower.endsWith('.pdf') ? 'application/pdf'
-      : (lower.endsWith('.png') ? 'image/png'
-      : (lower.endsWith('.jpg') || lower.endsWith('.jpeg') ? 'image/jpeg' : 'application/octet-stream'));
-
-    try {
-      // Fetch the URI and upload the resulting Blob directly (avoids using the web File constructor
-      // and the conflicting expo-file-system File type).
-      const res = await fetch(uri);
-      const blob = await res.blob();
-      const { data, error } = await supabase.storage
-        .from('tus')
-        .upload(storagePath, blob, { contentType, upsert: true });
-
-      if (error) throw error;
-      return data?.path ?? (data as any)?.path;
-    } catch (err) {
-      console.warn('File API upload (fetch->blob) failed, falling back to base64 read', err);
-      // Fallback: read via expo-file-system base64 and upload Buffer
-      try {
-  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-        const binary = Buffer.from(base64, 'base64');
-        const { data, error } = await supabase.storage.from('tus').upload(storagePath, binary, { contentType, upsert: true });
-        if (error) throw error;
-        return (data as any)?.path ?? data?.path;
-      } catch (e) {
-        console.warn('Base64 fallback failed', e);
-      }
-      throw err;
-    }
-  }
 
   const handleSubmitApplication = async () => {
     // Validate all required fields

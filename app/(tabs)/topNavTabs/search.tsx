@@ -15,7 +15,7 @@ import {
   Pressable,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import BottomNav from "../../../components/BottomNav";
 import { supabase } from "../../../lib/supabase";
 import { useNavigation } from "@react-navigation/native";
@@ -76,14 +76,6 @@ export default function SearchScreen() {
   const sidePanelAnim = useRef(new Animated.Value(-SIDEPANEL_WIDTH)).current;
 
   // --- Utility Functions ---
-  // Note: getStorageUrl is kept for backward compatibility but StoreCard now uses getCachedImageUrls
-  const getStorageUrl = (filename: string | null, userId: string | null): string | null => {
-    if (!filename || !userId) return null;
-    const storagePath = `applications/${userId}/store_photos/${filename}`;
-    const { data } = supabase.storage.from("tus").getPublicUrl(storagePath);
-    return data.publicUrl;
-  };
-
   // Helper function to load photos from both buckets (tus and user-uploaded-photos)
   const loadStorePhotos = async (photos_url: string[] | null, userId: string | null): Promise<string[]> => {
     if (!photos_url?.length || !userId) return [];

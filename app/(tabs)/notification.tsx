@@ -15,7 +15,7 @@ import { supabase } from "../../lib/supabase";
 import { useNotifications } from "../../context/NotificationContext";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 
 export const STORE_TO_OPEN_KEY = '@trovio_store_to_open';
 

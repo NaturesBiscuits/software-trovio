@@ -1,6 +1,5 @@
 import { Text } from "react-native";
 import type { StyleProp, TextStyle } from "react-native";
-import { cn } from "@/utils/cn";
 
 type AppTextProps = {
   children: React.ReactNode;
@@ -18,25 +17,29 @@ export function AppText({
   bold = false,
   color = "primary",
   center = false,
-  className,
   style,
 }: AppTextProps) {
+  const computedStyle: TextStyle = {
+    fontSize:
+      size === "small" ? 14 :
+      size === "medium" ? 16 :
+      size === "large" ? 18 :
+      20,
+    marginBottom:
+      size === "small" ? 8 :
+      size === "medium" ? 12 :
+      size === "large" ? 16 :
+      20,
+    fontWeight: bold ? "700" : "400",
+    color:
+      color === "primary" ? "#000" :
+      color === "secondary" ? "#6b7280" :
+      "#9ca3af",
+    textAlign: center ? "center" : "left",
+  };
+
   return (
-    <Text
-      className={cn(
-        size === "small" && "text-sm mb-2",
-        size === "medium" && "text-base mb-3",
-        size === "large" && "text-lg mb-4",
-        size === "heading" && "text-xl mb-5",
-        bold && "font-bold",
-        color === "primary" && "text-black",
-        color === "secondary" && "text-gray-500",
-        color === "tertiary" && "text-gray-400",
-        center && "text-center",
-        className,
-      )}
-      style={style}
-    >
+    <Text style={[computedStyle, style]}>
       {children}
     </Text>
   );

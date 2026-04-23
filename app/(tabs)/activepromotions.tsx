@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import { getCurrentUser } from "../../lib/authUtils";
 import { getCachedImageUrl } from "../../lib/imageCache";
 import { supabase } from "../../lib/supabase";
@@ -192,7 +192,7 @@ export default function ActivePromotionsScreen() {
               <Icon name="megaphone-outline" size={64} color="#8f92a1" />
               <Text style={styles.emptyTitle}>No Active Promotions</Text>
               <Text style={styles.emptySubtitle}>
-                You don't have any active promotions at the moment.
+                You don&apos;t have any active promotions at the moment.
               </Text>
             </View>
           ) : (

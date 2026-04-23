@@ -1,3 +1,4 @@
+# sprint-1-plan.md
 # Sprint 1 Plan
 
 ## Sprint Goal

@@ -1,7 +1,7 @@
 import { usePathname, useRouter } from "expo-router";
 import React from "react";
 import { TouchableOpacity, View, StyleSheet, Dimensions } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import { useNotifications } from "../context/NotificationContext"; // Assuming this path is correct
 
 // --- Constants ---
@@ -17,8 +17,32 @@ type TabName = "notification" | "home" | "settings";
 
 type TabConfig = {
   name: TabName;
-  iconOutline: string;
-  iconFilled: string;
+  iconOutline: React.ComponentProps<typeof Icon>["name"];
+  iconFilled: React.ComponentProps<typeof Icon>["name"];
+};
+
+const TABS: readonly TabConfig[] = [
+  {
+    name: "notification",
+    iconOutline: "notifications-outline",
+    iconFilled: "notifications"
+  },
+  {
+    name: "home",
+    iconOutline: "home-outline",
+    iconFilled: "home"
+  },
+  {
+    name: "settings",
+    iconOutline: "settings-outline",
+    iconFilled: "settings"
+  },
+];
+
+const PATH_BY_TAB: Readonly<Record<TabName, string>> = {
+  notification: "/(tabs)/notification",
+  home: "/(tabs)/discover",
+  settings: "/(tabs)/settings",
 };
 
 type BottomNavProps = {
@@ -28,37 +52,11 @@ type BottomNavProps = {
 
 // --- Component ---
 export default function BottomNav({ visible = false }: BottomNavProps) {
-  // If not visible, return null immediately.
-  if (!visible) return null;
-  
   const router = useRouter();
   const pathname = usePathname();
   const { hasUnreadNotifications } = useNotifications();
 
-  const TABS: ReadonlyArray<TabConfig> = [
-    { 
-      name: "notification", 
-      iconOutline: "notifications-outline", 
-      iconFilled: "notifications" 
-    },
-    { 
-      name: "home", 
-      iconOutline: "home-outline", 
-      iconFilled: "home" 
-    },
-    { 
-      name: "settings", 
-      iconOutline: "settings-outline", 
-      iconFilled: "settings" 
-    },
-  ];
-
-  // Map tab names to their correct expo-router path
-  const PATH_BY_TAB: Readonly<Record<TabName, string>> = {
-    notification: "/(tabs)/notification",
-    home: "/(tabs)/discover", // Path for the home tab
-    settings: "/(tabs)/settings",
-  };
+  if (!visible) return null;
 
   // Helper function to determine if a tab is active
   const getIsActive = (tabName: TabName) => {
@@ -76,7 +74,7 @@ export default function BottomNav({ visible = false }: BottomNavProps) {
       {TABS.map((tab) => {
         const isActive = getIsActive(tab.name);
         const iconColor = isActive ? ACTIVE_COLOR : INACTIVE_COLOR;
-        
+
         return (
           <TouchableOpacity
             key={tab.name}

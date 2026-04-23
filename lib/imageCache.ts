@@ -13,6 +13,13 @@ interface ImageCache {
   [key: string]: CachedImageUrl;
 }
 
+export function isValidImageUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  return /^(https?:\/\/|data:image\/|file:\/\/)/.test(trimmed);
+}
+
 /**
  * Generate a cache key for an image
  */

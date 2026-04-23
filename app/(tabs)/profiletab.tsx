@@ -1,14 +1,23 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Image, TouchableOpacity, Pressable } from "react-native";
 import Animated, {
+  runOnJS,
   useSharedValue,
   withTiming,
   useAnimatedStyle,
 } from "react-native-reanimated";
 
-export default function ProfileSidePanel({ visible, onClose }) {
+type ProfileSidePanelProps = {
+  visible: boolean;
+  onClose: () => void;
+};
+
+export default function ProfileSidePanel({ visible, onClose }: ProfileSidePanelProps) {
   const [shouldRender, setShouldRender] = useState(visible);
   const translateX = useSharedValue(400);
+  const panelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
 
   useEffect(() => {
     if (visible) {
@@ -17,18 +26,13 @@ export default function ProfileSidePanel({ visible, onClose }) {
     } else {
       translateX.value = withTiming(400, { duration: 350 }, (finished) => {
         if (finished) {
-          // Delay unmount until animation is completely done
-          setShouldRender(false);
+          runOnJS(setShouldRender)(false);
         }
       });
     }
-  }, [visible]);
+  }, [translateX, visible]);
 
   if (!shouldRender) return null;
-
-  const panelStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
 
   return (
     <>
@@ -87,7 +91,7 @@ export default function ProfileSidePanel({ visible, onClose }) {
   );
 }
 
-function MenuItem({ label }) {
+function MenuItem({ label }: { label: string }) {
   return (
     <TouchableOpacity
       style={{

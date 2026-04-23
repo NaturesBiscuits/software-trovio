@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
 import StoreProfileModal, { removeSavedStoreId } from "../../components/StoreProfileModal";
 import { unfavorite } from "../../lib/engagementTracking";
@@ -85,7 +85,6 @@ function VerticalStoreCardOnlyImage({ store }: { store: StoreApplication }) {
     };
     doLoad();
     return () => { isActive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.photos_url, store.user_id]);
   // --- END IMAGE LOADING LOGIC ---
 
@@ -105,8 +104,6 @@ function VerticalStoreCardOnlyImage({ store }: { store: StoreApplication }) {
     </View>
   );
 }
-
-import { Image } from "react-native"; // needed for the image rendering above
 
 export default function FavouritesScreen() {
   const router = useRouter();

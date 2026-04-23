@@ -1,8 +1,8 @@
 import UserTagPreferences from "@/components/UserTagPreferences";
 import { useUserProfile } from "@/context/UserProfileContext";
+import { getCachedImageUrl, isValidImageUrl } from "@/lib/imageCache";
 import { supabase } from "@/lib/supabase";
 import { uploadCompressedImage } from "@/lib/imageUtils";
-import { getCachedImageUrl } from "@/lib/imageCache";
 import * as ImagePicker from "expo-image-picker";
 import { Image as ExpoImage } from "expo-image";
 import { router } from "expo-router";
@@ -18,7 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 
 export default function ProfileScreen() {
   const { userProfile, isLoading, refreshProfile } = useUserProfile();
@@ -86,8 +86,10 @@ export default function ProfileScreen() {
 
       // Show image immediately by getting a signed URL (handles private buckets)
       const avatarUrl = await getCachedImageUrl(uploadedPath, userId, "tus");
-      if (avatarUrl) {
+      if (isValidImageUrl(avatarUrl)) {
         setAvatar(avatarUrl);
+      } else {
+        setAvatar(undefined);
       }
       refreshProfile && (await refreshProfile());
     } catch (e: any) {
@@ -111,7 +113,7 @@ export default function ProfileScreen() {
         try {
           // Use the cached image URL helper which handles signed URLs properly
           const url = await getCachedImageUrl(userProfile.avatar_url, userProfile.id, "tus");
-          setAvatarUri(url || undefined);
+          setAvatarUri(isValidImageUrl(url) ? url : undefined);
         } catch (error) {
           console.warn("Error loading avatar URL:", error);
           setAvatarUri(undefined);
@@ -122,7 +124,6 @@ export default function ProfileScreen() {
     };
 
     loadAvatarUrl();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.avatar_url, userProfile?.id, avatar]);
 
   return (
@@ -158,9 +159,9 @@ export default function ProfileScreen() {
                 contentFit="cover"
                 transition={200}
                 placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
-                onError={(error) => {
-                  console.warn("Failed to load avatar image:", error);
+                onError={() => {
                   setAvatar(undefined);
+                  setAvatarUri(undefined);
                 }}
               />
             ) : (

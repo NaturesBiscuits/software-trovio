@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { View, Image, Text, StyleSheet, ViewStyle, ImageStyle, TextStyle } from 'react-native';
+import { View, Image, Text, ViewStyle, ImageStyle, TextStyle } from 'react-native';
 import { useDesignSystem } from '@/hooks/use-design-system';
 
 export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
@@ -18,7 +18,7 @@ export interface AvatarProps {
 }
 
 export function Avatar({ source, label, size = 'md', variant = 'circular', style }: AvatarProps) {
-  const { colors, typography, spacing, borderRadius } = useDesignSystem();
+  const { colors, typography, borderRadius } = useDesignSystem();
 
   const getSize = (): number => {
     switch (size) {

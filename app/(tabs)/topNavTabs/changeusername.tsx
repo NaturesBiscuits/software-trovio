@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  SafeAreaView,
   View,
   Text,
   TextInput,
@@ -13,6 +12,7 @@ import {
   Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { useUserProfile } from "@/context/UserProfileContext";
 
@@ -30,7 +30,7 @@ export default function EditNameScreen() {
     if (userProfile?.username && name === "") {
       setName(userProfile.username);
     }
-  }, [userProfile]);
+  }, [name, userProfile?.username]);
 
   const canSave = useMemo(() => {
     if (saving || profileLoading) return false;

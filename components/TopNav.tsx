@@ -1,5 +1,5 @@
 import { usePathname, useRouter } from "expo-router";
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import { Text, TouchableOpacity, View, Dimensions } from "react-native";
 import Animated, {
   useSharedValue,
@@ -20,18 +20,21 @@ type TopNavProps = {
   forYouActive?: boolean;
 };
 
+const TABS: Tab[] = [
+  { key: "search", label: "Search", route: "/(tabs)/topNavTabs/search" },
+  { key: "forYou", label: "For You", route: "/(tabs)/discover" },
+  { key: "profile", label: "Profile", route: "/(tabs)/topNavTabs/profile" },
+];
+
+const TAB_WIDTH = screenWidth / TABS.length;
+const INDICATOR_WIDTH = TAB_WIDTH * 0.6;
+
 export default function TopNav({ forYouActive }: TopNavProps) {
   const router = useRouter();
   const pathname = usePathname();
 
   const indicatorPositionX = useSharedValue(0);
   const indicatorWidth = useSharedValue(0);
-
-  const tabs: Tab[] = [
-    { key: "search", label: "Search", route: "/(tabs)/topNavTabs/search" },
-    { key: "forYou", label: "For You", route: "/(tabs)/discover" },
-    { key: "profile", label: "Profile", route: "/(tabs)/topNavTabs/profile" },
-  ];
 
   const getActiveKey = () => {
     if (forYouActive === true) return "forYou";
@@ -48,29 +51,27 @@ export default function TopNav({ forYouActive }: TopNavProps) {
   };
 
   const activeKey = getActiveKey();
-  const tabWidth = screenWidth / tabs.length;
-  const indicatorWidthValue = tabWidth * 0.6;
 
-  const animateIndicator = (tabIndex: number) => {
-    const centerX = tabIndex * tabWidth + tabWidth / 2 - indicatorWidthValue / 2;
+  const animateIndicator = useCallback((tabIndex: number) => {
+    const centerX = tabIndex * TAB_WIDTH + TAB_WIDTH / 2 - INDICATOR_WIDTH / 2;
     indicatorPositionX.value = withTiming(centerX, {
       duration: 300,
       easing: Easing.out(Easing.ease),
     });
-    indicatorWidth.value = withTiming(indicatorWidthValue, {
+    indicatorWidth.value = withTiming(INDICATOR_WIDTH, {
       duration: 300,
       easing: Easing.out(Easing.ease),
     });
-  };
+  }, [indicatorPositionX, indicatorWidth]);
 
   useEffect(() => {
-    const activeIndex = tabs.findIndex(tab => tab.key === activeKey && tab.key !== "forYou");
+    const activeIndex = TABS.findIndex(tab => tab.key === activeKey && tab.key !== "forYou");
     if (activeIndex !== -1) {
       animateIndicator(activeIndex);
     } else {
       indicatorWidth.value = withTiming(0, { duration: 200 });
     }
-  }, [activeKey]);
+  }, [activeKey, animateIndicator, indicatorWidth]);
 
   const animatedIndicatorStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: indicatorPositionX.value }],
@@ -134,7 +135,7 @@ export default function TopNav({ forYouActive }: TopNavProps) {
             paddingBottom: 10,
           }}
         >
-          {tabs.map((tab, index) => {
+          {TABS.map((tab) => {
             const isActive = tab.key === activeKey;
             const showForYouUnderline = tab.key === "forYou" && isActive;
             return (
@@ -166,7 +167,7 @@ export default function TopNav({ forYouActive }: TopNavProps) {
                     style={{
                       marginTop: 6,
                       height: 2.5,
-                      width: tabWidth * 0.35, // Shorter line
+                      width: TAB_WIDTH * 0.35, // Shorter line
                       backgroundColor: "#000",
                       borderRadius: 1.5,
                       alignSelf: "center",

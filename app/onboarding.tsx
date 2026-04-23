@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { 
-  SafeAreaView, 
   StatusBar, 
   StyleSheet, 
   Text, 
@@ -10,9 +9,10 @@ import {
   Platform,
   useWindowDimensions
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Ionicons as Icon } from '@expo/vector-icons';
 
 const ONBOARDING_STORAGE_KEY = '@trovio_onboarding_seen';
 

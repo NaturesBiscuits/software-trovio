@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { View, ViewProps, StyleSheet, ViewStyle } from 'react-native';
+import { View, ViewProps, ViewStyle } from 'react-native';
 import { useDesignSystem } from '@/hooks/use-design-system';
 
 export interface DividerProps extends ViewProps {

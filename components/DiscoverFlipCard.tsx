@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Ionicons as Icon } from '@expo/vector-icons';
 import { recordPromotionClick } from '../lib/engagementTracking';
 import { getCachedImageUrl, getCachedImageUrls } from '../lib/imageCache';
 export type StorePromotion = {
@@ -183,7 +183,7 @@ export default React.memo(function DiscoverFlipCard({
       useNativeDriver: true,
       easing: Easing.out(Easing.cubic),
     }).start();
-  }, [isFlipped, onFirstFlip]);
+  }, [flipAnim, isFlipped, onFirstFlip]);
 
   const frontAnimatedStyle = {
     transform: [

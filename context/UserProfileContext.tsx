@@ -61,7 +61,6 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
       }
       
       if (!sessionData.session) {
-        console.log('No active session found');
         setUserProfile(null);
         return;
       }
@@ -153,20 +152,12 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
   };
 
   useEffect(() => {
-    // Only fetch if we don't have profile data yet
-    if (!userProfile) {
-      fetchUserProfile();
-    }
+    fetchUserProfile();
 
-    // Listen for auth state changes
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        // User is signed in, fetch profile if we don't have it
-        if (!userProfile) {
-          fetchUserProfile();
-        }
+        void fetchUserProfile();
       } else {
-        // User is signed out, clear profile
         setUserProfile(null);
       }
     });
@@ -174,7 +165,7 @@ export const UserProfileProvider: React.FC<UserProfileProviderProps> = ({ childr
     return () => {
       subscription.subscription.unsubscribe();
     };
-  }, [userProfile]);
+  }, []);
 
   const value: UserProfileContextType = {
     userProfile,

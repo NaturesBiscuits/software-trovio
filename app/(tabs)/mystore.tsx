@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import CreatePromotionModal from "../../components/CreatePromotionModal";
 import EditStoreModal from "../../components/EditStoreModal";
 import type { StoreApplication } from "../../components/DiscoverFlipCard";
@@ -23,7 +23,7 @@ import VerticalStoreCard from "../../components/VerticalStoreCard";
 import { getCachedImageUrl, getCachedImageUrls } from "../../lib/imageCache";
 import { supabase } from "../../lib/supabase";
 
-const { width: deviceWidth, height: deviceHeight } = Dimensions.get("window");
+const { width: deviceWidth } = Dimensions.get("window");
 const PLACEHOLDER_WIDTH = Math.min(350, deviceWidth - 40);
 const PLACEHOLDER_HEIGHT = 220;
 

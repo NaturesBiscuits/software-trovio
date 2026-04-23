@@ -10,9 +10,8 @@ import {
   View,
 } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 // REMOVED: import BottomNav from "../../components/BottomNav";
-import { useUserProfile } from "../../context/UserProfileContext";
 import { getCurrentUser } from "../../lib/authUtils";
 import { supabase } from "../../lib/supabase";
 
@@ -132,7 +131,6 @@ const VisitBreakdownPie = ({ slices, size = 180, innerRadius = 60 }: VisitBreakd
 
 export default function ProfessionalToolsAnalyticsScreen() {
   const router = useRouter();
-  const { userProfile } = useUserProfile();
 
   // Store selection state
   const [stores, setStores] = useState<StoreOption[]>([]);

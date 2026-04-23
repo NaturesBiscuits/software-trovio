@@ -12,7 +12,6 @@ import {
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,11 +20,12 @@ import {
   View
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { Ionicons as Icon } from '@expo/vector-icons';
 import { cacheStores, getCachedStores } from '../../lib/storeCache';
-import { getCachedImageUrl } from '../../lib/imageCache';
+import { getCachedImageUrl, isValidImageUrl } from '../../lib/imageCache';
 import { supabase } from '../../lib/supabase';
 import { STORE_TO_OPEN_KEY } from './notification';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // --- YOUR COMPONENTS ---
 import DiscoverFlipCard, { StoreApplication } from '../../components/DiscoverFlipCard';
@@ -219,14 +219,18 @@ const ProfileSidePanel = ({
   user: any;
   hasProAccess?: boolean;
 }) => {
+  type MenuItem = {
+    label: string;
+    icon: React.ComponentProps<typeof Icon>["name"];
+    action: () => void | Promise<void>;
+    hasBadge?: boolean;
+  };
+
   const router = useRouter();
   const { hasUnreadNotifications } = useNotifications();
   const panelWidth = Math.min(320, Dimensions.get('window').width * 0.86);
   const slideAnim = useRef(new Animated.Value(panelWidth)).current;
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
-
-  // Remember if we've already navigated, to prevent duplicate navigation due to fast successive renders.
-  const alreadyNavigatedRef = useRef(false);
 
   // Load avatar URL when user changes
   useEffect(() => {
@@ -234,7 +238,7 @@ const ProfileSidePanel = ({
       if (user?.avatar_url && user?.id) {
         try {
           const url = await getCachedImageUrl(user.avatar_url, user.id, 'tus');
-          setAvatarUrl(url || undefined);
+          setAvatarUrl(isValidImageUrl(url) ? url : undefined);
         } catch (error) {
           console.warn('Error loading avatar URL:', error);
           setAvatarUrl(undefined);
@@ -278,15 +282,17 @@ const ProfileSidePanel = ({
     );
   };
 
-  const menuItems = [
+  const proMenuItems: MenuItem[] = hasProAccess
+    ? [
+        { label: 'My Store', icon: 'storefront-outline', action: () => { onClose(); router.push('/(tabs)/mystore'); }},
+        { label: 'Professional Tools', icon: 'construct-outline', action: () => { onClose(); router.push('/(tabs)/proftoolsanalytics'); } },
+      ]
+    : [];
+
+  const menuItems: MenuItem[] = [
     { label: 'Profile', icon: 'person-circle-outline', action: () => { onClose(); router.push('/(tabs)/topNavTabs/profile'); } },
     { label: 'Notifications', icon: 'notifications-outline', action: () => { onClose(); router.push('/(tabs)/notification'); }, hasBadge: hasUnreadNotifications },
-    ...(hasProAccess
-      ? [
-          { label: 'My Store', icon: 'storefront-outline', action: () => { onClose(); router.push('/(tabs)/mystore'); }},
-          { label: 'Professional Tools', icon: 'construct-outline', action: () => { onClose(); router.push('/(tabs)/proftoolsanalytics'); } },
-        ]
-      : []),
+    ...proMenuItems,
     { label: 'Saved Stores', icon: 'bookmark-outline', action: () => router.push('/(tabs)/savedstores') },
     { label: 'Settings', icon: 'settings-outline', action: () => {} },
     { label: 'Logout', icon: 'log-out-outline', action: handleLogout },
@@ -310,6 +316,7 @@ const ProfileSidePanel = ({
                 contentFit="cover"
                 transition={200}
                 placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
+                onError={() => setAvatarUrl(undefined)}
               />
             ) : (
               <View style={[styles.panelAvatar, { backgroundColor: '#eee', justifyContent: 'center', alignItems: 'center' }]}>
@@ -419,7 +426,7 @@ export default function HomeScreen() {
       if (userProfile?.avatar_url && userProfile?.id) {
         try {
           const url = await getCachedImageUrl(userProfile.avatar_url, userProfile.id, 'tus');
-          setHeaderAvatarUrl(url || undefined);
+          setHeaderAvatarUrl(isValidImageUrl(url) ? url : undefined);
         } catch (error) {
           console.warn('Error loading header avatar URL:', error);
           setHeaderAvatarUrl(undefined);
@@ -453,8 +460,6 @@ export default function HomeScreen() {
 
   // Memoize and prevent unnecessary reloads unless discoverIds changes
   useEffect(() => {
-    let cancelled = false;
-
     const fetchDiscoverStores = async () => {
       if (!discoverIds.length) {
         setDiscoverStores([]);
@@ -890,7 +895,7 @@ export default function HomeScreen() {
       Animated.timing(navTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }).start();
     }
     lastScrollY.current = currentY;
-  }, []);
+  }, [navTranslateY, topNavOpacity, topNavTranslateY]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1018,7 +1023,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.headerTitle}>Hi, {userProfile?.full_name?.split(' ')[0] || 'there'}!</Text>
-            <Text style={styles.headerSubtitle}>Let's see where we take you next!</Text>
+            <Text style={styles.headerSubtitle}>Let&apos;s see where we take you next!</Text>
           </View>
           <TouchableOpacity onPress={() => setProfilePanelOpen(true)} style={styles.avatarContainer}>
             {headerAvatarUrl ? (
@@ -1028,6 +1033,7 @@ export default function HomeScreen() {
                 contentFit="cover"
                 transition={200}
                 placeholder={{ blurhash: "L6PZfSi_.AyE_3t7t7R**0o#DgR4" }}
+                onError={() => setHeaderAvatarUrl(undefined)}
               />
             ) : (
               <View style={[styles.avatar, { backgroundColor: '#eee', justifyContent: 'center', alignItems: 'center' }]}>

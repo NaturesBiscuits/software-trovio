@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, TextInput, Text, TouchableOpacity, StyleSheet } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 
 export type TagItem = { id: string | number; name: string };
@@ -89,7 +89,7 @@ export default function TagSelector({ selectedTags, onSelect, onDeselect }: TagS
             );
           })}
           {filteredTags.length === 0 && query && (
-            <Text style={styles.noResultsText}>No tags found matching "{query}"</Text>
+            <Text style={styles.noResultsText}>No tags found matching &quot;{query}&quot;</Text>
           )}
         </View>
       )}

@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, FlatList, Modal, Text, TextInput, TouchableOpacity, View } from "react-native";
-import Icon from "react-native-vector-icons/Ionicons";
+import { Ionicons as Icon } from "@expo/vector-icons";
 import { useLanguage } from "../../context/LanguageContext";
 import { supabase } from "../../lib/supabase";
 import { languageResources } from "../../services/i18next";

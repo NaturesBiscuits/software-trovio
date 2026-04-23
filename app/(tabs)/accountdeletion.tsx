@@ -2,14 +2,20 @@ import React, { useState } from "react";
 import {
   View,
   Text,
-  SafeAreaView,
   StyleSheet,
   TextInput,
   TouchableOpacity,
   Image,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-export default function AccountDeletionScreen({ navigation }) {
+type AccountDeletionScreenProps = {
+  navigation?: {
+    goBack?: () => void;
+  };
+};
+
+export default function AccountDeletionScreen({ navigation }: AccountDeletionScreenProps) {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
 

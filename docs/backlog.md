@@ -2,6 +2,10 @@
 
 Trovio is a location-based discovery and recommendation app for finding spaces such as storage areas, parking spots, and commercial spaces. The backlog below focuses on helping users discover, compare, save, and rent available spaces while improving recommendation quality through preferences, distance, and behavior.
 
+## 15-Week Scope Decision
+
+The project scope is realistic for a 15-week build because Sprint 1 focuses on discovery, filtering, onboarding, and space details before moving into rental requests, owner listing tools, admin review, and recommendation improvements. Larger production concerns such as payments, legal contracts, and complex dispute handling are outside the initial course scope.
+
 ## Story Summary
 
 | ID | User Story | Priority | Points |
@@ -10,13 +14,13 @@ Trovio is a location-based discovery and recommendation app for finding spaces s
 | ST-002 | As a user, I want a personalized For You feed so that the app recommends spaces based on my location, preferences, and activity. | High | 8 |
 | ST-003 | As a user, I want to filter spaces by category and tags so that I can narrow results to storage, parking, or commercial needs. | High | 5 |
 | ST-004 | As a user, I want to view detailed space information so that I can decide whether a listing fits my requirements. | High | 5 |
-| ST-005 | As a user, I want to save favorite spaces so that I can revisit promising listings later. | Medium | 3 |
+| ST-005 | As a user, I want to save favorite spaces so that I can revisit promising listings later. | Med | 3 |
 | ST-006 | As a user, I want to request or rent an available space so that I can reserve it for my intended use. | High | 8 |
 | ST-007 | As a space owner, I want to create a space listing so that other users can discover and rent my available space. | High | 8 |
-| ST-008 | As a space owner, I want to manage availability, pricing, and listing status so that my space information stays accurate. | Medium | 5 |
+| ST-008 | As a space owner, I want to manage availability, pricing, and listing status so that my space information stays accurate. | Med | 5 |
 | ST-009 | As a new user, I want onboarding for location and preferences so that Trovio can personalize recommendations from the start. | High | 5 |
-| ST-010 | As a user, I want recommendations improved by similar user behavior so that I can discover spaces I may not search for directly. | Medium | 8 |
-| ST-011 | As a user, I want map-based search and distance information so that I can understand where each space is located. | Medium | 5 |
+| ST-010 | As a user, I want recommendations improved by similar user behavior so that I can discover spaces I may not search for directly. | Med | 8 |
+| ST-011 | As a user, I want map-based search and distance information so that I can understand where each space is located. | Med | 5 |
 | ST-012 | As an admin, I want to review submitted listings so that unsafe, incomplete, or invalid spaces are not published. | High | 5 |
 
 ## Acceptance Criteria

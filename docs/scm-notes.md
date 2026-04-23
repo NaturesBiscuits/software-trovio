@@ -5,7 +5,7 @@
 Date: 2026-04-23
 
 ### Scenario
-- Conflict simulation branch note: this side records the final feature-branch explanation for the same section.
+- A deliberate conflict was created between `feature/branch-naming-rules` and `bugfix/conflict-sim` by editing the same line differently on each branch.
 - The branches were merged locally to trigger a conflict for practice.
 
 ### Conflict Resolution Steps

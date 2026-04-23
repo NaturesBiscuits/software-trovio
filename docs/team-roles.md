@@ -10,6 +10,7 @@ Team members are based on contributors visible in the repository history. Roles 
 | Juan Sapanaterm | QA Lead | Reviews acceptance criteria, prepares test notes, validates story completion, and records defects. |
 | clydeee03 | DevOps Lead | Checks setup, build readiness, environment variables, Supabase configuration, and deployment concerns. |
 | John Flores | Docs Lead | Keeps `docs/backlog.md`, `docs/sprint-1-plan.md`, `docs/schedule.md`, and `docs/team-roles.md` current. |
+| Art J | Database | Manages Supabase database tables, migrations, row-level security policies, relationships, and data access for Trovio features. |
 
 ## Rotation Plan
 

@@ -5,7 +5,7 @@
 Date: 2026-04-23
 
 ### Scenario
-- A conflict was intentionally created between `feature/branch-naming-rules` and `dev` by editing the same section in this file on both branches.
+- Conflict simulation branch note: this side records the final feature-branch explanation for the same section.
 - The branches were merged locally to trigger a conflict for practice.
 
 ### Conflict Resolution Steps

@@ -10,6 +10,20 @@
 
 This document details the merge conflict resolution process conducted during the Git mastery workshop, demonstrating practical SCM best practices and conflict handling strategies.
 
+### Additional Week 5 Exercise
+- Feature branch: `feature/branch-naming-rules`
+- Simulation branch: `bugfix/conflict-sim`
+- Conflict file: `docs/scm-notes.md` (same line edited on both branches)
+- Resolution: manually merged both branch intents into one final statement and completed merge commit.
+
+### Week 5 Evidence Summary
+- Branch naming rules are implemented in `.github/workflows/branch-name-check.yml`.
+- CODEOWNERS is configured in `.github/CODEOWNERS`.
+- Feature branch `feature/branch-naming-rules` was merged into `dev`.
+- Merge commit: `466a54f` (`merge: integrate feature branch into dev with conflict resolution`).
+- Release notes are documented in `docs/release-notes.md`.
+- Local release tag: `v0.5-scm`.
+
 ---
 
 ## Scenario Summary

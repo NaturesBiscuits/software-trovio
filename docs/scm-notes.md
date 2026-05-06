@@ -202,13 +202,13 @@ Both test strategies are now available for different use cases."
 
 ### When to Ask for Help
 
-❌ **Don't resolve alone if:**
+ **Don't resolve alone if:**
 - You don't understand both changes
 - Conflict affects critical functionality
 - Non-obvious best resolution exists
 - Team needs to decide on direction
 
-✅ **Do resolve if:**
+ **Do resolve if:**
 - Both changes are compatible
 - You understand purpose of both changes
 - Logical merge strategy exists

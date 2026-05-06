@@ -36,6 +36,31 @@ export function getShadow(key: keyof typeof shadows): ViewStyle {
   return shadows[key] || {};
 }
 
+type SpacingStyleProperty = 'padding' | 'margin';
+type SpacingAxisProperty = 'paddingHorizontal' | 'paddingVertical' | 'marginHorizontal' | 'marginVertical';
+
+function createSpacingStyle(
+  property: SpacingStyleProperty,
+  all?: keyof typeof spacing,
+  horizontal?: keyof typeof spacing,
+  vertical?: keyof typeof spacing
+): ViewStyle {
+  const style: ViewStyle = {};
+
+  if (all) {
+    style[property] = spacing[all];
+    return style;
+  }
+
+  const horizontalProperty = `${property}Horizontal` as SpacingAxisProperty;
+  const verticalProperty = `${property}Vertical` as SpacingAxisProperty;
+
+  if (horizontal) style[horizontalProperty] = spacing[horizontal];
+  if (vertical) style[verticalProperty] = spacing[vertical];
+
+  return style;
+}
+
 /**
  * Create consistent padding style
  */
@@ -44,14 +69,7 @@ export function padding(
   horizontal?: keyof typeof spacing,
   vertical?: keyof typeof spacing
 ): ViewStyle {
-  const style: ViewStyle = {};
-  if (all) {
-    style.padding = spacing[all];
-  } else {
-    if (horizontal) style.paddingHorizontal = spacing[horizontal];
-    if (vertical) style.paddingVertical = spacing[vertical];
-  }
-  return style;
+  return createSpacingStyle('padding', all, horizontal, vertical);
 }
 
 /**
@@ -62,14 +80,7 @@ export function margin(
   horizontal?: keyof typeof spacing,
   vertical?: keyof typeof spacing
 ): ViewStyle {
-  const style: ViewStyle = {};
-  if (all) {
-    style.margin = spacing[all];
-  } else {
-    if (horizontal) style.marginHorizontal = spacing[horizontal];
-    if (vertical) style.marginVertical = spacing[vertical];
-  }
-  return style;
+  return createSpacingStyle('margin', all, horizontal, vertical);
 }
 
 /**
